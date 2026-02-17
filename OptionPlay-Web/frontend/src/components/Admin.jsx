@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Settings, Save, RotateCcw, FileText, CheckCircle, AlertCircle, Database, Play, Terminal } from 'lucide-react';
+import { Settings, Save, RotateCcw, FileText, CheckCircle, AlertCircle, Database, Play, Terminal, ChevronDown } from 'lucide-react';
 import { fetchConfig, saveConfig, runDbUpdate, fetchDbStatus } from '../api';
 
 const CONFIG_TABS = [
@@ -17,14 +17,71 @@ const DB_STEPS = [
     { id: 'ohlcv', label: 'OHLCV Prices', desc: 'Daily candlestick data' },
 ];
 
+// ──────────────────────────────────────────────────────────
+// Collapsible header
+// ──────────────────────────────────────────────────────────
+
+function CollapsibleHeader({ icon, title, right, collapsed, onToggle }) {
+    return (
+        <button className="card-header-toggle" onClick={onToggle} type="button">
+            <div className="header-left">
+                <h3>{icon} {title}</h3>
+            </div>
+            <div className="header-right">
+                {right}
+                <ChevronDown size={16} className={`chevron${collapsed ? ' collapsed' : ''}`} />
+            </div>
+        </button>
+    );
+}
+
+// ──────────────────────────────────────────────────────────
+// Skeleton
+// ──────────────────────────────────────────────────────────
+
+function AdminSkeleton() {
+    return (
+        <>
+            {/* DB Update panel skeleton */}
+            <div className="skeleton-card analysis-section fade-in">
+                <div className="skeleton skeleton-title" />
+                <div className="skeleton skeleton-line w-80" />
+                <div className="skeleton skeleton-line w-60" />
+                <div className="skeleton skeleton-line w-40" />
+            </div>
+            {/* Tab bar skeleton */}
+            <div className="skeleton-card analysis-section fade-in" style={{ animationDelay: '0.05s' }}>
+                <div style={{ display: 'flex', gap: 8 }}>
+                    {[0, 1, 2, 3, 4, 5].map(i => (
+                        <div key={i} className="skeleton" style={{ height: 32, width: 100, borderRadius: 'var(--radius-xs)' }} />
+                    ))}
+                </div>
+            </div>
+            {/* Editor card skeleton */}
+            <div className="skeleton-card fade-in" style={{ animationDelay: '0.1s' }}>
+                <div className="skeleton skeleton-title" />
+                <div className="skeleton" style={{ height: 300, borderRadius: 'var(--radius-xs)' }} />
+            </div>
+        </>
+    );
+}
+
+// ──────────────────────────────────────────────────────────
+// Main Component
+// ──────────────────────────────────────────────────────────
+
 export default function Admin() {
     const [activeTab, setActiveTab] = useState('weights');
     const [content, setContent] = useState('');
     const [filename, setFilename] = useState('');
-    const [loading, setLoading] = useState(false);
+    const [configLoading, setConfigLoading] = useState(false);
     const [saving, setSaving] = useState(false);
     const [status, setStatus] = useState(null);
     const [dirty, setDirty] = useState(false);
+
+    // Page-level loading skeleton
+    const [loading, setLoading] = useState(true);
+    const [collapsed, setCollapsed] = useState({});
 
     // DB Update state
     const [dbSteps, setDbSteps] = useState(['vix', 'options', 'ohlcv']);
@@ -34,11 +91,18 @@ export default function Admin() {
     const [dbStatus, setDbStatus] = useState(null);
 
     useEffect(() => {
+        const timer = setTimeout(() => setLoading(false), 800);
+        return () => clearTimeout(timer);
+    }, []);
+
+    useEffect(() => {
         loadConfig(activeTab);
     }, [activeTab]);
 
+    const toggleSection = (id) => setCollapsed(prev => ({ ...prev, [id]: !prev[id] }));
+
     const loadConfig = async (key) => {
-        setLoading(true);
+        setConfigLoading(true);
         setStatus(null);
         setDirty(false);
         try {
@@ -50,7 +114,7 @@ export default function Admin() {
             setFilename(`${key}.yaml`);
             setStatus({ type: 'error', message: 'Backend not connected. Start it to load real config.' });
         }
-        setLoading(false);
+        setConfigLoading(false);
     };
 
     const handleSave = async () => {
@@ -105,201 +169,191 @@ export default function Admin() {
             </div>
 
             <div className="page-content">
-                {/* ============ DB UPDATE PANEL ============ */}
-                <div className="card fade-in" style={{ marginBottom: 24 }}>
-                    <div className="card-header">
-                        <h3>
-                            <Database size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} />
-                            Database Update
-                        </h3>
-                        <button className="btn btn-secondary" onClick={handleDbStatus} style={{ padding: '4px 12px', fontSize: 12 }}>
-                            Check Status
-                        </button>
-                    </div>
-                    <div className="card-body">
-                        <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-                            {/* Step checkboxes */}
-                            <div style={{ flex: 1, minWidth: 200 }}>
-                                <div className="form-label" style={{ marginBottom: 10 }}>Steps to run</div>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                                    {DB_STEPS.map((step) => (
-                                        <label key={step.id} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 14 }}>
-                                            <input
-                                                type="checkbox"
-                                                checked={dbSteps.includes(step.id)}
-                                                onChange={() => toggleStep(step.id)}
-                                                style={{ accentColor: 'var(--indigo)', width: 16, height: 16 }}
-                                            />
-                                            <span style={{ fontWeight: 500 }}>{step.label}</span>
-                                            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>— {step.desc}</span>
-                                        </label>
-                                    ))}
-                                </div>
-                            </div>
+                {loading && <AdminSkeleton />}
 
-                            {/* Options & Run */}
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'flex-end' }}>
-                                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
-                                    <input
-                                        type="checkbox"
-                                        checked={dbDryRun}
-                                        onChange={(e) => setDbDryRun(e.target.checked)}
-                                        style={{ accentColor: 'var(--amber)', width: 16, height: 16 }}
-                                    />
-                                    <span>Dry Run</span>
-                                </label>
-                                <button
-                                    className="btn btn-primary"
-                                    onClick={handleDbUpdate}
-                                    disabled={dbRunning || dbSteps.length === 0}
-                                    style={{ minWidth: 160 }}
-                                >
-                                    {dbRunning ? (
-                                        <>
-                                            <div className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} />
-                                            Running...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Play size={14} />
-                                            Run DB Update
-                                        </>
-                                    )}
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* DB Status Output */}
-                        {dbStatus && (
-                            <div style={{ marginTop: 16, padding: 12, background: 'var(--bg-input)', borderRadius: 'var(--radius-xs)', fontSize: 12, fontFamily: 'monospace', color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', maxHeight: 200, overflow: 'auto' }}>
-                                {dbStatus.output || 'No status available'}
-                            </div>
-                        )}
-
-                        {/* DB Update Result */}
-                        {dbResult && (
-                            <div style={{ marginTop: 16 }}>
-                                <div style={{
-                                    padding: '8px 14px',
-                                    borderRadius: 'var(--radius-xs)',
-                                    marginBottom: 8,
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 8,
-                                    fontSize: 13,
-                                    fontWeight: 500,
-                                    ...(dbResult.status === 'completed'
-                                        ? { background: 'var(--green-glow)', color: 'var(--green)', border: '1px solid rgba(16,185,129,0.3)' }
-                                        : { background: 'var(--red-glow)', color: 'var(--red)', border: '1px solid rgba(239,68,68,0.3)' }),
-                                }}>
-                                    {dbResult.status === 'completed' ? <CheckCircle size={16} /> : <AlertCircle size={16} />}
-                                    DB Update {dbResult.status}
-                                </div>
-                                {(dbResult.stdout || dbResult.stderr) && (
-                                    <div style={{ padding: 12, background: 'var(--bg-input)', borderRadius: 'var(--radius-xs)', fontSize: 12, fontFamily: 'monospace', color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', maxHeight: 300, overflow: 'auto' }}>
-                                        <Terminal size={12} style={{ marginRight: 6, verticalAlign: 'middle', opacity: 0.5 }} />
-                                        Output:
-                                        {'\n'}{dbResult.stdout}
-                                        {dbResult.stderr && <span style={{ color: 'var(--red)' }}>{'\n'}Errors:\n{dbResult.stderr}</span>}
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                    </div>
-                </div>
-
-                {/* ============ CONFIG EDITOR ============ */}
-                {/* Tab Bar */}
-                <div className="tabs fade-in" style={{ marginBottom: 20 }}>
-                    {CONFIG_TABS.map((tab) => (
-                        <button
-                            key={tab.key}
-                            className={`tab ${activeTab === tab.key ? 'active' : ''}`}
-                            onClick={() => setActiveTab(tab.key)}
-                        >
-                            {tab.label}
-                        </button>
-                    ))}
-                </div>
-
-                {/* Config Description */}
-                <div className="card fade-in" style={{ marginBottom: 16 }}>
-                    <div className="card-body" style={{ padding: '12px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                            <FileText size={16} style={{ color: 'var(--text-accent)' }} />
-                            <div>
-                                <span style={{ fontWeight: 600, marginRight: 8 }}>{filename}</span>
-                                <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-                                    {CONFIG_TABS.find(t => t.key === activeTab)?.desc}
-                                </span>
-                            </div>
-                        </div>
-                        <div style={{ display: 'flex', gap: 8 }}>
-                            <button className="btn btn-secondary" onClick={handleReset} disabled={loading}>
-                                <RotateCcw size={14} />
-                                Reset
-                            </button>
-                            <button
-                                className={`btn ${dirty ? 'btn-success pulse' : 'btn-primary'}`}
-                                onClick={handleSave}
-                                disabled={saving || loading}
-                            >
-                                {saving ? <div className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} /> : <Save size={14} />}
-                                {dirty ? 'Save & Reload' : 'Save'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Status Message */}
-                {status && (
-                    <div
-                        className="fade-in"
-                        style={{
-                            padding: '10px 16px',
-                            borderRadius: 'var(--radius-xs)',
-                            marginBottom: 16,
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 8,
-                            fontSize: 13,
-                            fontWeight: 500,
-                            ...(status.type === 'success'
-                                ? { background: 'var(--green-glow)', color: 'var(--green)', border: '1px solid rgba(16,185,129,0.3)' }
-                                : { background: 'var(--red-glow)', color: 'var(--red)', border: '1px solid rgba(239,68,68,0.3)' }),
-                        }}
-                    >
-                        {status.type === 'success' ? <CheckCircle size={16} /> : <AlertCircle size={16} />}
-                        {status.message}
-                    </div>
-                )}
-
-                {/* YAML Editor */}
-                <div className="card fade-in" style={{ animationDelay: '0.1s' }}>
-                    <div className="card-body" style={{ padding: 0 }}>
-                        {loading ? (
-                            <div className="loading-spinner" style={{ minHeight: 400 }}>
-                                <div className="spinner" />
-                            </div>
-                        ) : (
-                            <textarea
-                                className="form-textarea"
-                                value={content}
-                                onChange={(e) => {
-                                    setContent(e.target.value);
-                                    setDirty(true);
-                                    setStatus(null);
-                                }}
-                                spellCheck={false}
-                                style={{
-                                    border: 'none',
-                                    borderRadius: 'var(--radius)',
-                                    minHeight: 500,
-                                }}
+                {!loading && (
+                    <>
+                        {/* ============ DB UPDATE PANEL ============ */}
+                        <div className="card analysis-section fade-in">
+                            <CollapsibleHeader
+                                icon={<Database size={14} style={{ verticalAlign: 'middle' }} />}
+                                title="Database Update"
+                                right={
+                                    <button className="btn btn-secondary" onClick={(e) => { e.stopPropagation(); handleDbStatus(); }} style={{ padding: '4px 12px', fontSize: 12 }}>
+                                        Check Status
+                                    </button>
+                                }
+                                collapsed={collapsed.dbUpdate}
+                                onToggle={() => toggleSection('dbUpdate')}
                             />
+                            <div className={`card-body-collapsible${collapsed.dbUpdate ? ' collapsed' : ''}`}>
+                                <div className="card-body">
+                                    <div className="admin-db-layout">
+                                        {/* Step checkboxes */}
+                                        <div style={{ flex: 1, minWidth: 200 }}>
+                                            <div className="form-label" style={{ marginBottom: 10 }}>Steps to run</div>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                                {DB_STEPS.map((step) => (
+                                                    <label key={step.id} className="admin-step-label">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={dbSteps.includes(step.id)}
+                                                            onChange={() => toggleStep(step.id)}
+                                                        />
+                                                        <span style={{ fontWeight: 500 }}>{step.label}</span>
+                                                        <span className="admin-step-meta">— {step.desc}</span>
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        {/* Options & Run */}
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'flex-end' }}>
+                                            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={dbDryRun}
+                                                    onChange={(e) => setDbDryRun(e.target.checked)}
+                                                    style={{ accentColor: 'var(--amber)', width: 16, height: 16 }}
+                                                />
+                                                <span>Dry Run</span>
+                                            </label>
+                                            <button
+                                                className="btn btn-primary"
+                                                onClick={handleDbUpdate}
+                                                disabled={dbRunning || dbSteps.length === 0}
+                                                style={{ minWidth: 160 }}
+                                            >
+                                                {dbRunning ? (
+                                                    <>
+                                                        <div className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} />
+                                                        Running...
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <Play size={14} />
+                                                        Run DB Update
+                                                    </>
+                                                )}
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* DB Status Output */}
+                                    {dbStatus && (
+                                        <div className="admin-output-panel" style={{ maxHeight: 200 }}>
+                                            {dbStatus.output || 'No status available'}
+                                        </div>
+                                    )}
+
+                                    {/* DB Update Result */}
+                                    {dbResult && (
+                                        <div style={{ marginTop: 16 }}>
+                                            <div className={`admin-status-msg ${dbResult.status === 'completed' ? 'success' : 'error'}`}>
+                                                {dbResult.status === 'completed' ? <CheckCircle size={16} /> : <AlertCircle size={16} />}
+                                                DB Update {dbResult.status}
+                                            </div>
+                                            {(dbResult.stdout || dbResult.stderr) && (
+                                                <div className="admin-output-panel">
+                                                    <Terminal size={12} style={{ marginRight: 6, verticalAlign: 'middle', opacity: 0.5 }} />
+                                                    Output:
+                                                    {'\n'}{dbResult.stdout}
+                                                    {dbResult.stderr && <span style={{ color: 'var(--red)' }}>{'\n'}Errors:\n{dbResult.stderr}</span>}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* ============ CONFIG EDITOR ============ */}
+                        {/* Tab Bar */}
+                        <div className="tabs analysis-section fade-in" style={{ animationDelay: '0.05s' }}>
+                            {CONFIG_TABS.map((tab) => (
+                                <button
+                                    key={tab.key}
+                                    className={`tab ${activeTab === tab.key ? 'active' : ''}`}
+                                    onClick={() => setActiveTab(tab.key)}
+                                >
+                                    {tab.label}
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* Config Description */}
+                        <div className="card analysis-section fade-in" style={{ animationDelay: '0.1s' }}>
+                            <div className="card-body" style={{ padding: '12px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                    <FileText size={16} style={{ color: 'var(--text-accent)' }} />
+                                    <div>
+                                        <span style={{ fontWeight: 600, marginRight: 8 }}>{filename}</span>
+                                        <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+                                            {CONFIG_TABS.find(t => t.key === activeTab)?.desc}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div style={{ display: 'flex', gap: 8 }}>
+                                    <button className="btn btn-secondary" onClick={handleReset} disabled={configLoading}>
+                                        <RotateCcw size={14} />
+                                        Reset
+                                    </button>
+                                    <button
+                                        className={`btn ${dirty ? 'btn-success pulse' : 'btn-primary'}`}
+                                        onClick={handleSave}
+                                        disabled={saving || configLoading}
+                                    >
+                                        {saving ? <div className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} /> : <Save size={14} />}
+                                        {dirty ? 'Save & Reload' : 'Save'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Status Message */}
+                        {status && (
+                            <div className={`admin-status-msg ${status.type} analysis-section fade-in`}>
+                                {status.type === 'success' ? <CheckCircle size={16} /> : <AlertCircle size={16} />}
+                                {status.message}
+                            </div>
                         )}
-                    </div>
-                </div>
+
+                        {/* YAML Editor */}
+                        <div className="card fade-in" style={{ animationDelay: '0.15s' }}>
+                            <CollapsibleHeader
+                                icon={<Settings size={14} style={{ verticalAlign: 'middle' }} />}
+                                title="Config Editor"
+                                collapsed={collapsed.configEditor}
+                                onToggle={() => toggleSection('configEditor')}
+                            />
+                            <div className={`card-body-collapsible${collapsed.configEditor ? ' collapsed' : ''}`}>
+                                <div className="card-body" style={{ padding: 0 }}>
+                                    {configLoading ? (
+                                        <div className="loading-spinner" style={{ minHeight: 400 }}>
+                                            <div className="spinner" />
+                                        </div>
+                                    ) : (
+                                        <textarea
+                                            className="form-textarea"
+                                            value={content}
+                                            onChange={(e) => {
+                                                setContent(e.target.value);
+                                                setDirty(true);
+                                                setStatus(null);
+                                            }}
+                                            spellCheck={false}
+                                            style={{
+                                                border: 'none',
+                                                borderRadius: 'var(--radius)',
+                                                minHeight: 500,
+                                            }}
+                                        />
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </>
+                )}
             </div>
         </>
     );
