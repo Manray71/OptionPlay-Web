@@ -109,7 +109,7 @@ export default function Admin() {
             const data = await fetchConfig(key);
             setContent(data.content);
             setFilename(data.filename);
-        } catch (err) {
+        } catch (_err) {
             setContent(`# ${CONFIG_TABS.find(t => t.key === key)?.label || key}\n# Backend not connected — showing placeholder\n# Start the backend with: uvicorn backend.main:app --reload\n`);
             setFilename(`${key}.yaml`);
             setStatus({ type: 'error', message: 'Backend not connected. Start it to load real config.' });

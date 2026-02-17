@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Search, BarChart3, TrendingUp, TrendingDown, Shield, Zap, Newspaper, Users, ArrowUp, ArrowDown, Minus, Target, Activity, ChevronDown } from 'lucide-react';
+import { Search, BarChart3, Zap, Newspaper, Users, Target, Activity, ChevronDown } from 'lucide-react';
 
 // ──────────────────────────────────────────────────────────
 // Mock data generator
@@ -85,7 +85,7 @@ function generateMockAnalysis(sym) {
 // IV Percentile Gauge
 // ──────────────────────────────────────────────────────────
 
-function IVPercentileGauge({ percentile, rank, ivCurrent, iv30d, iv1y, hvCurrent }) {
+function IVPercentileGauge({ percentile, rank, ivCurrent, iv30d, _iv1y, hvCurrent }) {
     const pct = Math.min(Math.max(percentile, 0), 100);
     const angle = (pct / 100) * 180;
     const rad = (Math.PI * (180 - angle)) / 180;
@@ -360,6 +360,7 @@ export default function Analysis({ initialSymbol, onSymbolConsumed }) {
             onSymbolConsumed?.();
         }
         return () => { hasConsumed.current = false; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [initialSymbol]);
 
     const addRecentSearch = (s) => {
