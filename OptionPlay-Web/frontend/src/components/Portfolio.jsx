@@ -1,4 +1,4 @@
-import { Briefcase, TrendingUp, TrendingDown, DollarSign, Clock, ChevronDown } from 'lucide-react';
+import { Briefcase, DollarSign, Clock, ChevronDown } from 'lucide-react';
 import { useState } from 'react';
 
 // ──────────────────────────────────────────────────────────
@@ -67,11 +67,6 @@ function positionPnlPct(p) {
         return (positionPnlPerContract(p) / maxProfit) * 100;
     }
     return (positionPnlPerContract(p) / (p.debit * 100)) * 100;
-}
-
-function positionCostBasis(p) {
-    if (isCredit(p)) return p.credit;
-    return p.debit;
 }
 
 function formatStrikes(p) {
