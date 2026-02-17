@@ -1,0 +1,74 @@
+from fastapi import APIRouter, HTTPException
+import sys
+import os
+from typing import Optional
+
+# Add parent directory to path to import OptionPlay
+# This assumes OptionPlay-Web is a sibling of OptionPlay
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../OptionPlay")))
+
+try:
+    from src.mcp_server import OptionPlayServer
+    from src.mcp_tool_registry import tool_registry
+except ImportError as e:
+    print(f"Error importing OptionPlay: {e}")
+    # Mock for development if OptionPlay is missing
+    OptionPlayServer = None
+
+router = APIRouter()
+
+# Singleton server instance
+server_instance = None
+
+async def get_server():
+    global server_instance
+    if server_instance is None and OptionPlayServer:
+        server_instance = OptionPlayServer()
+        # Initialize connection if needed, though most methods handle it
+    return server_instance
+
+@router.get("/vix")
+async def get_vix():
+    server = await get_server()
+    if not server:
+        return {"error": "OptionPlay server not available"}
+    
+    # Using the handler logic from mcp_tool_registry
+    return await server.handlers.vix.get_strategy_recommendation()
+
+@router.get("/quote/{symbol}")
+async def get_quote(symbol: str):
+    server = await get_server()
+    if not server:
+        return {"error": "OptionPlay server not available"}
+    return await server.handlers.quote.get_quote(symbol)
+
+@router.get("/analyze/{symbol}")
+async def analyze_symbol(symbol: str):
+    server = await get_server()
+    if not server:
+        return {"error": "OptionPlay server not available"}
+    return await server.handlers.analysis.analyze_symbol(symbol)
+
+@router.post("/scan")
+async def run_scan(criteria: dict):
+    server = await get_server()
+    if not server:
+        return {"error": "OptionPlay server not available"}
+    
+    # Generic scan dispatcher
+    strategy = criteria.get("strategy", "pullback")
+    
+    if strategy == "pullback":
+        return await server.handlers.scan.scan_with_strategy(
+            symbols=criteria.get("symbols"),
+            min_score=criteria.get("min_score", 3.5)
+        )
+    elif strategy == "bounce":
+         return await server.handlers.scan.scan_bounce(
+            symbols=criteria.get("symbols"),
+            min_score=criteria.get("min_score", 5.0)
+        )
+    # Add other strategies as needed
+    
+    return {"error": f"Unknown strategy: {strategy}"}
