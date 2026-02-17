@@ -11,16 +11,18 @@ import {
     ExternalLink,
     ChevronDown,
     Clock,
+    Info,
 } from 'lucide-react';
+import { fetchVixJson, fetchQuotesJson, runScanJson, fetchPortfolioPositions } from '../api';
 
 // ──────────────────────────────────────────────────────────
-// Mock data
+// Fallback data (used when API is unavailable)
 // ──────────────────────────────────────────────────────────
 
-const MOCK_VIX = 18.5;
-const MOCK_REGIME = 'Normal';
+const FALLBACK_VIX = 18.5;
+const FALLBACK_REGIME = 'Normal';
 
-const MOCK_PICKS = [
+const FALLBACK_PICKS = [
     { symbol: 'AAPL', strategy: 'Pullback', score: 7.8, signal: 'Strong', stability: 92, ivRank: 42 },
     { symbol: 'MSFT', strategy: 'Trend', score: 7.2, signal: 'Strong', stability: 88, ivRank: 35 },
     { symbol: 'GOOGL', strategy: 'Bounce', score: 6.9, signal: 'Moderate', stability: 85, ivRank: 51 },
@@ -28,7 +30,7 @@ const MOCK_PICKS = [
     { symbol: 'META', strategy: 'Breakout', score: 6.3, signal: 'Moderate', stability: 79, ivRank: 58 },
 ];
 
-const MOCK_MARKET = [
+const FALLBACK_MARKET = [
     { symbol: 'SPY', price: 592.34, change: 1.25, direction: 'up' },
     { symbol: 'QQQ', price: 518.89, change: 0.88, direction: 'up' },
     { symbol: 'IWM', price: 224.56, change: -0.32, direction: 'down' },
@@ -38,9 +40,7 @@ const MOCK_MARKET = [
     { symbol: 'VIX', price: 18.50, change: 5.2, direction: 'alert' },
 ];
 
-// ── Diverse position types (synced with Portfolio) ──
-
-const MOCK_POSITIONS = [
+const FALLBACK_POSITIONS = [
     { id: 'D001', symbol: 'NVDA', type: 'bull-put-spread', strategy: 'Pullback', shortStrike: 115, longStrike: 110, expiration: '2026-04-17', dte: 59, qty: 2, credit: 1.45, currentValue: 0.84, status: 'open' },
     { id: 'D002', symbol: 'AAPL', type: 'naked-put', strategy: 'Pullback', shortStrike: 215, longStrike: null, expiration: '2026-03-21', dte: 32, qty: 1, credit: 2.85, currentValue: 1.30, status: 'open' },
     { id: 'D003', symbol: 'TSLA', type: 'long-call', strategy: 'Breakout', longStrike: 340, shortStrike: null, expiration: '2026-06-19', dte: 122, qty: 5, debit: 18.50, currentValue: 24.30, status: 'open' },
@@ -48,6 +48,46 @@ const MOCK_POSITIONS = [
     { id: 'D005', symbol: 'AMD', type: 'bull-put-spread', strategy: 'Bounce', shortStrike: 100, longStrike: 95, expiration: '2026-03-21', dte: 32, qty: 3, credit: 1.20, currentValue: 0.87, status: 'open' },
     { id: 'D006', symbol: 'CRM', type: 'bull-put-spread', strategy: 'Trend', shortStrike: 280, longStrike: 275, expiration: '2026-04-17', dte: 59, qty: 1, credit: 1.10, currentValue: 1.42, status: 'open' },
 ];
+
+// ── Map API scan signal to dashboard pick format ──
+
+function signalToPick(signal) {
+    const strength = signal.strength || '';
+    return {
+        symbol: signal.symbol,
+        strategy: (signal.strategy || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+        score: signal.score ?? 0,
+        signal: strength.charAt(0).toUpperCase() + strength.slice(1).toLowerCase(),
+        stability: signal.details?.stability_score ?? signal.details?.stability?.stability_score ?? 0,
+        ivRank: signal.details?.iv_rank ?? 0,
+    };
+}
+
+// ── Map API portfolio position to dashboard format ──
+
+function apiPositionToDashboard(p) {
+    const shortStrike = p.short_leg?.strike ?? null;
+    const longStrike = p.long_leg?.strike ?? null;
+    const expiration = p.short_leg?.expiration ?? p.long_leg?.expiration ?? '';
+    const now = new Date();
+    const exp = new Date(expiration);
+    const dte = Math.max(0, Math.round((exp - now) / (1000 * 60 * 60 * 24)));
+    const credit = Math.abs(p.short_leg?.premium ?? 0) + Math.abs(p.long_leg?.premium ?? 0);
+    return {
+        id: p.id,
+        symbol: p.symbol,
+        type: 'bull-put-spread',
+        strategy: 'Pullback',
+        shortStrike,
+        longStrike,
+        expiration,
+        dte,
+        qty: p.contracts ?? 1,
+        credit,
+        currentValue: credit * 0.6,
+        status: p.status === 'open' ? 'open' : 'closed',
+    };
+}
 
 const TYPE_LABELS = {
     'bull-put-spread': 'Bull Put',
@@ -216,20 +256,66 @@ function DashboardSkeleton() {
 export default function Dashboard({ onSymbolClick }) {
     const [loading, setLoading] = useState(true);
     const [collapsed, setCollapsed] = useState({});
+    const [demoMode, setDemoMode] = useState(false);
+
+    const [vix, setVix] = useState(FALLBACK_VIX);
+    const [regime, setRegime] = useState(FALLBACK_REGIME);
+    const [picks, setPicks] = useState(FALLBACK_PICKS);
+    const [market, setMarket] = useState(FALLBACK_MARKET);
+    const [positions, setPositions] = useState(FALLBACK_POSITIONS);
 
     useEffect(() => {
-        const timer = setTimeout(() => setLoading(false), 800);
-        return () => clearTimeout(timer);
+        let cancelled = false;
+        async function loadData() {
+            const results = await Promise.allSettled([
+                fetchVixJson(),
+                fetchQuotesJson(['SPY', 'QQQ', 'IWM', 'DIA', 'GLD', 'TLT']),
+                runScanJson({ strategy: 'multi', max_results: 5 }),
+                fetchPortfolioPositions('open'),
+            ]);
+            if (cancelled) return;
+
+            let usedFallback = false;
+
+            // VIX
+            if (results[0].status === 'fulfilled' && !results[0].value.error) {
+                setVix(results[0].value.vix);
+                setRegime(results[0].value.regime);
+            } else { usedFallback = true; }
+
+            // Market quotes
+            if (results[1].status === 'fulfilled' && results[1].value.quotes?.length) {
+                const quotes = results[1].value.quotes;
+                setMarket(quotes.map(q => ({
+                    symbol: q.symbol,
+                    price: q.price ?? 0,
+                    change: q.change_pct ?? 0,
+                    direction: (q.change_pct ?? 0) > 0 ? 'up' : (q.change_pct ?? 0) < 0 ? 'down' : 'up',
+                })));
+            } else { usedFallback = true; }
+
+            // Top picks from scan
+            if (results[2].status === 'fulfilled' && results[2].value.signals?.length) {
+                setPicks(results[2].value.signals.map(signalToPick));
+            } else { usedFallback = true; }
+
+            // Portfolio positions
+            if (results[3].status === 'fulfilled' && results[3].value.positions?.length) {
+                setPositions(results[3].value.positions.map(apiPositionToDashboard));
+            } else { usedFallback = true; }
+
+            setDemoMode(usedFallback);
+            setLoading(false);
+        }
+        loadData();
+        return () => { cancelled = true; };
     }, []);
 
     const toggleSection = (id) => setCollapsed(prev => ({ ...prev, [id]: !prev[id] }));
 
-    const vix = MOCK_VIX;
-    const regime = MOCK_REGIME;
-
     // Compute aggregate stats
-    const totalPnl = MOCK_POSITIONS.reduce((sum, p) => sum + positionPnlTotal(p), 0);
-    const profitable = MOCK_POSITIONS.filter(p => positionPnlTotal(p) > 0).length;
+    const totalPnl = positions.reduce((sum, p) => sum + positionPnlTotal(p), 0);
+    const profitable = positions.filter(p => positionPnlTotal(p) > 0).length;
 
     const lastUpdated = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
@@ -238,6 +324,11 @@ export default function Dashboard({ onSymbolClick }) {
             <div className="page-header">
                 <h2>Dashboard</h2>
                 <p>Market overview and daily trading signals</p>
+                {demoMode && (
+                    <span style={{ fontSize: 11, color: 'var(--amber)', display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
+                        <Info size={12} /> Demo mode — some data is simulated
+                    </span>
+                )}
             </div>
 
             <div className="page-content">
@@ -254,7 +345,7 @@ export default function Dashboard({ onSymbolClick }) {
                             </div>
                             <div className="stat-card">
                                 <div className="stat-label">Active Positions</div>
-                                <div className="stat-value indigo">{MOCK_POSITIONS.length}</div>
+                                <div className="stat-value indigo">{positions.length}</div>
                                 <div className="stat-change" style={{ color: 'var(--green)' }}>{profitable} profitable</div>
                             </div>
                             <div className="stat-card">
@@ -263,7 +354,7 @@ export default function Dashboard({ onSymbolClick }) {
                                     {totalPnl >= 0 ? '+' : ''}${totalPnl.toFixed(0)}
                                 </div>
                                 <div className="stat-change" style={{ color: totalPnl >= 0 ? 'var(--green)' : 'var(--red)' }}>
-                                    across {MOCK_POSITIONS.length} positions
+                                    across {positions.length} positions
                                 </div>
                             </div>
                             <div className="stat-card">
@@ -304,7 +395,7 @@ export default function Dashboard({ onSymbolClick }) {
                                                     <tr><th>Index</th><th>Price</th><th>Change</th><th>Trend</th></tr>
                                                 </thead>
                                                 <tbody>
-                                                    {MOCK_MARKET.map(m => {
+                                                    {market.map(m => {
                                                         const color = m.direction === 'up' ? 'var(--green)' : m.direction === 'down' ? 'var(--red)' : 'var(--amber)';
                                                         const Icon = m.direction === 'up' ? TrendingUp : m.direction === 'down' ? TrendingDown : AlertTriangle;
                                                         return (
@@ -331,7 +422,7 @@ export default function Dashboard({ onSymbolClick }) {
                                 title="Daily Top Picks"
                                 right={
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                        <span className="badge badge-indigo">{MOCK_PICKS.length} picks</span>
+                                        <span className="badge badge-indigo">{picks.length} picks</span>
                                         <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Click to analyze</span>
                                     </div>
                                 }
@@ -345,7 +436,7 @@ export default function Dashboard({ onSymbolClick }) {
                                             <tr><th>Rank</th><th>Symbol</th><th>Strategy</th><th>Score</th><th>Signal</th><th>IV Rank</th><th>Stability</th><th></th></tr>
                                         </thead>
                                         <tbody>
-                                            {MOCK_PICKS.map((pick, i) => (
+                                            {picks.map((pick, i) => (
                                                 <tr
                                                     key={pick.symbol}
                                                     onClick={() => onSymbolClick?.(pick.symbol)}
@@ -385,7 +476,7 @@ export default function Dashboard({ onSymbolClick }) {
                             <CollapsibleHeader
                                 icon={<Target size={14} style={{ verticalAlign: 'middle' }} />}
                                 title="Active Positions"
-                                right={<span className="badge badge-indigo">{MOCK_POSITIONS.length} open</span>}
+                                right={<span className="badge badge-indigo">{positions.length} open</span>}
                                 collapsed={collapsed.positions}
                                 onToggle={() => toggleSection('positions')}
                             />
@@ -407,7 +498,7 @@ export default function Dashboard({ onSymbolClick }) {
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {MOCK_POSITIONS.map((p) => {
+                                            {positions.map((p) => {
                                                 const pnl = positionPnlTotal(p);
                                                 const pnlPct = positionPnlPct(p);
                                                 return (
