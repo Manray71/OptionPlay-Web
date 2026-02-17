@@ -186,6 +186,62 @@ async def analyze_symbol(symbol: str):
         except Exception:
             pass
 
+        # Compute support & resistance levels
+        levels = None
+        try:
+            from src.indicators.support_resistance import (
+                find_support_levels_enhanced, find_resistance_levels_enhanced,
+                calculate_fibonacci,
+            )
+            sr_support = find_support_levels_enhanced(
+                lows=lows, lookback=90, window=10, max_levels=5,
+                volumes=volumes,
+            )
+            sr_resistance = find_resistance_levels_enhanced(
+                highs=highs, lookback=90, window=10, max_levels=4,
+                volumes=volumes,
+            )
+
+            FIBONACCI_LOOKBACK = 60
+            fb_lookback = min(len(highs), FIBONACCI_LOOKBACK)
+            recent_high = max(highs[-fb_lookback:])
+            recent_low = min(lows[-fb_lookback:])
+            fib = calculate_fibonacci(recent_high, recent_low)
+
+            def level_to_dict(lvl, current):
+                strength_pct = round(lvl.strength * 100)
+                lvl_type = "Swing"
+                # Check if near a Fibonacci level
+                for fib_name, fib_price in fib.items():
+                    if abs(lvl.price - fib_price) / lvl.price < 0.02:
+                        lvl_type = f"Fib {fib_name}"
+                        break
+                return {
+                    "price": round(lvl.price, 2),
+                    "strength": strength_pct,
+                    "type": lvl_type,
+                    "touches": lvl.touches,
+                }
+
+            supports = [
+                level_to_dict(lvl, price)
+                for lvl in sr_support.support_levels
+                if price and lvl.price < price
+            ]
+            resistances = [
+                level_to_dict(lvl, price)
+                for lvl in sr_resistance.resistance_levels
+                if price and lvl.price > price
+            ]
+
+            if supports or resistances:
+                levels = {
+                    "supports": supports,
+                    "resistances": resistances,
+                }
+        except Exception:
+            pass
+
         # Build recommendation using StrikeRecommender (playbook-compliant)
         recommendation = None
         try:
@@ -282,14 +338,38 @@ async def analyze_symbol(symbol: str):
                     "data_source": "signal_only",
                 }
 
+        # Fetch analyst data and news (sync calls, run in thread pool)
+        analysts_data = None
+        news_data = None
+        try:
+            import asyncio
+            loop = asyncio.get_event_loop()
+
+            from src.data_providers.fundamentals import get_analyst_data
+            from src.data_providers.yahoo_news import get_stock_news
+
+            analysts_raw, news_raw = await asyncio.gather(
+                loop.run_in_executor(None, get_analyst_data, symbol),
+                loop.run_in_executor(None, get_stock_news, symbol, 5),
+            )
+
+            if analysts_raw and analysts_raw.get("total_ratings", 0) > 0:
+                analysts_data = analysts_raw
+
+            if news_raw:
+                news_data = news_raw
+        except Exception:
+            pass
+
         return {
             "symbol": symbol,
             "price": price,
             "strategies": strategies,
             "iv": iv_data,
+            "levels": levels,
             "recommendation": recommendation,
-            "news": None,
-            "analysts": None,
+            "news": news_data,
+            "analysts": analysts_data,
         }
     except Exception as e:
         return _error(str(e))

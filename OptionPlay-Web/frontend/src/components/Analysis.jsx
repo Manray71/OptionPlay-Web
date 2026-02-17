@@ -148,9 +148,33 @@ function mapApiAnalysis(data, sym) {
         hvCurrent: iv.hv_20 ?? mock.hvCurrent,
         earningsDays: mock.earningsDays,
         strategies: strategies.length > 0 ? strategies : mock.strategies,
-        levels: mock.levels,
-        news: mock.news,
-        analysts: mock.analysts,
+        levels: data.levels && (data.levels.supports?.length || data.levels.resistances?.length)
+            ? data.levels
+            : mock.levels,
+        news: data.news?.length
+            ? data.news.map(n => ({
+                title: n.title,
+                source: n.publisher || 'Unknown',
+                time: n.date || '',
+                sentiment: 'neutral',
+            }))
+            : mock.news,
+        analysts: data.analysts && data.analysts.total_ratings > 0
+            ? {
+                buy: data.analysts.buy ?? 0,
+                overweight: 0,
+                hold: data.analysts.hold ?? 0,
+                underweight: 0,
+                sell: data.analysts.sell ?? 0,
+                priceTarget: data.analysts.target_median ?? mock.analysts.priceTarget,
+                high: data.analysts.target_high ?? mock.analysts.high,
+                low: data.analysts.target_low ?? mock.analysts.low,
+                consensus: data.analysts.sentiment === 'BULLISH' ? 'Buy'
+                    : data.analysts.sentiment === 'BEARISH' ? 'Sell' : 'Hold',
+            }
+            : mock.analysts,
+        _newsLive: !!data.news?.length,
+        _analystsLive: !!(data.analysts && data.analysts.total_ratings > 0),
         recommendation,
         _liveData: strategies.length > 0,
     };
@@ -652,7 +676,7 @@ export default function Analysis({ initialSymbol, onSymbolConsumed }) {
                                 <CollapsibleHeader
                                     icon={<Users size={14} style={{ verticalAlign: 'middle' }} />}
                                     title="Analyst Consensus"
-                                    right={<><span className="badge badge-amber" style={{ fontSize: 10, marginRight: 4 }}>Sample data</span><span className={`badge ${result.analysts.consensus === 'Buy' ? 'badge-green' : 'badge-amber'}`}>{result.analysts.consensus}</span></>}
+                                    right={<>{!result._analystsLive && <span className="badge badge-amber" style={{ fontSize: 10, marginRight: 4 }}>Sample data</span>}<span className={`badge ${result.analysts.consensus === 'Buy' ? 'badge-green' : 'badge-amber'}`}>{result.analysts.consensus}</span></>}
                                     collapsed={collapsed.analysts}
                                     onToggle={() => toggleSection('analysts')}
                                 />
@@ -723,7 +747,7 @@ export default function Analysis({ initialSymbol, onSymbolConsumed }) {
                                 <CollapsibleHeader
                                     icon={<Newspaper size={14} style={{ verticalAlign: 'middle' }} />}
                                     title="Recent News"
-                                    right={<><span className="badge badge-amber" style={{ fontSize: 10, marginRight: 4 }}>Sample data</span><span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{result.news.length} articles</span></>}
+                                    right={<>{!result._newsLive && <span className="badge badge-amber" style={{ fontSize: 10, marginRight: 4 }}>Sample data</span>}<span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{result.news.length} articles</span></>}
                                     collapsed={collapsed.news}
                                     onToggle={() => toggleSection('news')}
                                 />
