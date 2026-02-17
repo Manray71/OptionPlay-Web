@@ -210,17 +210,26 @@ async def analyze_symbol(symbol: str):
 
             def level_to_dict(lvl, current):
                 strength_pct = round(lvl.strength * 100)
-                lvl_type = "Swing"
-                # Check if near a Fibonacci level
+                # Determine type from level characteristics
+                if lvl.volume_confirmation > 0.5:
+                    lvl_type = "Volume"
+                elif lvl.hold_count >= 2:
+                    lvl_type = "Tested"
+                else:
+                    lvl_type = "Swing"
+                # Check if near a Fibonacci level (tight 0.5% tolerance)
+                fib_tag = None
                 for fib_name, fib_price in fib.items():
-                    if abs(lvl.price - fib_price) / lvl.price < 0.02:
-                        lvl_type = f"Fib {fib_name}"
+                    if lvl.price > 0 and abs(lvl.price - fib_price) / lvl.price < 0.005:
+                        fib_tag = fib_name
                         break
                 return {
                     "price": round(lvl.price, 2),
                     "strength": strength_pct,
                     "type": lvl_type,
+                    "fib": fib_tag,
                     "touches": lvl.touches,
+                    "holdRate": round(lvl.hold_rate, 2) if lvl.hold_rate > 0 else None,
                 }
 
             supports = [
@@ -312,6 +321,18 @@ async def analyze_symbol(symbol: str):
                 )
                 if rec:
                     recommendation = rec.to_dict()
+                    # Add DTE and expiration from options chain
+                    if options_data:
+                        from collections import Counter
+                        dte_counts = Counter(
+                            o["dte"] for o in options_data if o.get("dte")
+                        )
+                        if dte_counts:
+                            best_dte = dte_counts.most_common(1)[0][0]
+                            recommendation["dte"] = best_dte
+                            from datetime import date, timedelta
+                            exp_date = date.today() + timedelta(days=best_dte)
+                            recommendation["expiration"] = exp_date.isoformat()
                     # Add top signal context
                     if signals:
                         top = max(signals, key=lambda s: s.score)
@@ -338,28 +359,56 @@ async def analyze_symbol(symbol: str):
                     "data_source": "signal_only",
                 }
 
-        # Fetch analyst data and news (sync calls, run in thread pool)
+        # Fetch analyst data (sync yfinance call, run in thread pool)
         analysts_data = None
-        news_data = None
         try:
             import asyncio
             loop = asyncio.get_event_loop()
 
             from src.data_providers.fundamentals import get_analyst_data
-            from src.data_providers.yahoo_news import get_stock_news
 
-            analysts_raw, news_raw = await asyncio.gather(
-                loop.run_in_executor(None, get_analyst_data, symbol),
-                loop.run_in_executor(None, get_stock_news, symbol, 5),
+            analysts_raw = await loop.run_in_executor(
+                None, get_analyst_data, symbol
             )
 
             if analysts_raw and analysts_raw.get("total_ratings", 0) > 0:
                 analysts_data = analysts_raw
-
-            if news_raw:
-                news_data = news_raw
         except Exception:
             pass
+
+        # Fetch news from IBKR TWS Bridge
+        news_data = None
+        try:
+            ibkr_bridge = server.handlers.ibkr._ctx.ibkr_bridge
+            if ibkr_bridge and await ibkr_bridge.is_available():
+                ibkr_news = await ibkr_bridge.get_news([symbol], days=5)
+                if ibkr_news:
+                    news_data = [
+                        {
+                            "title": n.headline,
+                            "publisher": n.provider or "IBKR",
+                            "link": None,
+                            "timestamp": 0,
+                            "date": n.time or "",
+                        }
+                        for n in ibkr_news
+                    ]
+        except Exception:
+            pass
+
+        # Fallback to yfinance news if IBKR unavailable
+        if not news_data:
+            try:
+                loop = asyncio.get_event_loop()
+                from src.data_providers.yahoo_news import get_stock_news
+
+                news_raw = await loop.run_in_executor(
+                    None, get_stock_news, symbol, 5
+                )
+                if news_raw:
+                    news_data = news_raw
+            except Exception:
+                pass
 
         return {
             "symbol": symbol,
@@ -370,6 +419,54 @@ async def analyze_symbol(symbol: str):
             "recommendation": recommendation,
             "news": news_data,
             "analysts": analysts_data,
+        }
+    except Exception as e:
+        return _error(str(e))
+
+
+@router.get("/news/{symbol}")
+async def get_news(symbol: str, count: int = 5):
+    server = await get_server()
+    symbol = symbol.upper()
+
+    # Try IBKR TWS Bridge first
+    try:
+        if server:
+            ibkr_bridge = server.handlers.ibkr._ctx.ibkr_bridge
+            if ibkr_bridge and await ibkr_bridge.is_available():
+                ibkr_news = await ibkr_bridge.get_news(
+                    [symbol], days=5, max_per_symbol=count
+                )
+                if ibkr_news:
+                    return {
+                        "symbol": symbol,
+                        "source": "ibkr",
+                        "news": [
+                            {
+                                "title": n.headline,
+                                "publisher": n.provider or "IBKR",
+                                "link": None,
+                                "timestamp": 0,
+                                "date": n.time or "",
+                            }
+                            for n in ibkr_news
+                        ],
+                    }
+    except Exception:
+        pass
+
+    # Fallback to yfinance
+    try:
+        import asyncio
+        loop = asyncio.get_event_loop()
+
+        from src.data_providers.yahoo_news import get_stock_news
+        news = await loop.run_in_executor(None, get_stock_news, symbol, count)
+
+        return {
+            "symbol": symbol,
+            "source": "yfinance",
+            "news": news or [],
         }
     except Exception as e:
         return _error(str(e))

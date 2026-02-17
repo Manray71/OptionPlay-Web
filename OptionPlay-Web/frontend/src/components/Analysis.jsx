@@ -120,15 +120,22 @@ function mapApiAnalysis(data, sym) {
             strategy: 'Bull-Put Spread',
             shortStrike: rec.short_strike,
             longStrike: rec.long_strike,
+            spreadWidth: rec.spread_width,
             shortDelta: rec.estimated_delta ?? mock.recommendation.shortDelta,
             longDelta: rec.long_delta ?? mock.recommendation.longDelta,
+            shortStrikeReason: rec.short_strike_reason,
             dte: rec.dte ?? mock.recommendation.dte,
             expiration: rec.expiration ?? mock.recommendation.expiration,
             creditEstimate: credit != null ? `$${credit.toFixed(2)}` : mock.recommendation.creditEstimate,
             maxRisk: maxLoss != null ? `$${maxLoss.toFixed(0)}` : mock.recommendation.maxRisk,
+            maxProfit: rec.max_profit != null ? `$${rec.max_profit.toFixed(0)}` : null,
+            breakEven: rec.break_even,
             returnOnRisk: ror,
             quality: rec.quality ?? null,
+            confidenceScore: rec.confidence_score ?? null,
             probProfit: rec.prob_profit ?? null,
+            warnings: rec.warnings ?? [],
+            supportLevel: rec.support_level ?? null,
             dataSource: rec.data_source === 'provider' ? 'live' : rec.data_source ?? 'calculated',
         };
     }
@@ -273,10 +280,10 @@ function SRChart({ price, levels }) {
                                     <span className="sr-marker-pct resistance">+{dist}%</span>
                                 </div>
                                 <div className="sr-marker-meta">
-                                    <span className="sr-marker-type">{lvl.type}</span>
+                                    <span className="sr-marker-type">{lvl.type}{lvl.fib ? ` · Fib ${lvl.fib}` : ''}</span>
                                     <div className="sr-marker-strength-wrap">
                                         <div className="sr-mini-bar"><div className="sr-mini-fill resistance" style={{ width: `${lvl.strength}%` }} /></div>
-                                        <span className="sr-mini-val">{lvl.strength}%</span>
+                                        <span className="sr-mini-val">{lvl.touches}x · {lvl.strength}%</span>
                                     </div>
                                 </div>
                             </div>
@@ -330,10 +337,10 @@ function SRChart({ price, levels }) {
                                     <span className="sr-marker-pct support">−{dist}%</span>
                                 </div>
                                 <div className="sr-marker-meta">
-                                    <span className="sr-marker-type">{lvl.type}</span>
+                                    <span className="sr-marker-type">{lvl.type}{lvl.fib ? ` · Fib ${lvl.fib}` : ''}</span>
                                     <div className="sr-marker-strength-wrap">
                                         <div className="sr-mini-bar"><div className="sr-mini-fill support" style={{ width: `${lvl.strength}%` }} /></div>
-                                        <span className="sr-mini-val">{lvl.strength}%</span>
+                                        <span className="sr-mini-val">{lvl.touches}x · {lvl.strength}%</span>
                                     </div>
                                 </div>
                             </div>
@@ -812,27 +819,56 @@ export default function Analysis({ initialSymbol, onSymbolConsumed }) {
                             />
                             <div className={`card-body-collapsible${collapsed.tradeRec ? ' collapsed' : ''}`}>
                                 <div className="card-body">
+                                    {result.recommendation.shortStrikeReason && (
+                                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8, fontStyle: 'italic' }}>
+                                            {result.recommendation.shortStrikeReason}
+                                            {result.recommendation.supportLevel && (
+                                                <span> — Support @ ${result.recommendation.supportLevel.price} ({result.recommendation.supportLevel.strength}, {result.recommendation.supportLevel.touches} touches{result.recommendation.supportLevel.confirmed_by_fib ? ', Fib confirmed' : ''})</span>
+                                            )}
+                                        </div>
+                                    )}
                                     <div className="grid-4">
                                         <div><span className="trade-rec-label">Strategy</span><div className="trade-rec-value">{result.recommendation.strategy}</div></div>
                                         <div>
                                             <span className="trade-rec-label">Short Strike</span>
-                                            <div className="trade-rec-value">{result.recommendation.shortStrike}</div>
-                                            <div className="trade-rec-delta">Δ {result.recommendation.shortDelta}</div>
+                                            <div className="trade-rec-value">${result.recommendation.shortStrike}</div>
+                                            <div className="trade-rec-delta">Δ {typeof result.recommendation.shortDelta === 'number' ? result.recommendation.shortDelta.toFixed(2) : result.recommendation.shortDelta}</div>
                                         </div>
                                         <div>
                                             <span className="trade-rec-label">Long Strike</span>
-                                            <div className="trade-rec-value">{result.recommendation.longStrike}</div>
-                                            <div className="trade-rec-delta">Δ {result.recommendation.longDelta}</div>
+                                            <div className="trade-rec-value">${result.recommendation.longStrike}</div>
+                                            <div className="trade-rec-delta">Δ {typeof result.recommendation.longDelta === 'number' ? result.recommendation.longDelta.toFixed(2) : result.recommendation.longDelta}</div>
                                         </div>
+                                        {result.recommendation.spreadWidth && (
+                                            <div><span className="trade-rec-label">Spread Width</span><div className="trade-rec-value">${result.recommendation.spreadWidth}</div></div>
+                                        )}
                                         <div><span className="trade-rec-label">DTE</span><div className="trade-rec-value">{result.recommendation.dte} days</div></div>
                                         <div><span className="trade-rec-label">Expiration</span><div className="trade-rec-value">{result.recommendation.expiration}</div></div>
                                         <div><span className="trade-rec-label">Credit</span><div className="trade-rec-value" style={{ color: 'var(--green)' }}>{result.recommendation.creditEstimate}</div></div>
                                         <div><span className="trade-rec-label">Max Risk</span><div className="trade-rec-value" style={{ color: 'var(--red)' }}>{result.recommendation.maxRisk}</div></div>
+                                        {result.recommendation.maxProfit && (
+                                            <div><span className="trade-rec-label">Max Profit</span><div className="trade-rec-value" style={{ color: 'var(--green)' }}>{result.recommendation.maxProfit}</div></div>
+                                        )}
                                         <div><span className="trade-rec-label">Return on Risk</span><div className="trade-rec-value" style={{ color: 'var(--green)' }}>{result.recommendation.returnOnRisk}</div></div>
+                                        {result.recommendation.breakEven != null && (
+                                            <div><span className="trade-rec-label">Break Even</span><div className="trade-rec-value">${result.recommendation.breakEven}</div></div>
+                                        )}
                                         {result.recommendation.probProfit != null && (
                                             <div><span className="trade-rec-label">Prob. Profit</span><div className="trade-rec-value" style={{ color: 'var(--green)' }}>{result.recommendation.probProfit.toFixed(0)}%</div></div>
                                         )}
+                                        {result.recommendation.confidenceScore != null && (
+                                            <div><span className="trade-rec-label">Confidence</span><div className="trade-rec-value">{result.recommendation.confidenceScore}/100</div></div>
+                                        )}
                                     </div>
+                                    {result.recommendation.warnings?.length > 0 && (
+                                        <div style={{ marginTop: 10, padding: '6px 10px', background: 'rgba(var(--amber-rgb, 245, 158, 11), 0.1)', borderRadius: 6, fontSize: 11 }}>
+                                            {result.recommendation.warnings.map((w, i) => (
+                                                <div key={i} style={{ color: 'var(--amber)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                    <span>⚠</span> {w}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </div>
