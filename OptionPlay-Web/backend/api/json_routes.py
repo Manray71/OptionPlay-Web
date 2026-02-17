@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import List
 import asyncio
+import os
 
 from .routes import get_server
 
@@ -38,6 +39,78 @@ def _vix_regime(vix: float) -> str:
 
 def _error(msg: str, status: int = 503) -> JSONResponse:
     return JSONResponse({"error": msg}, status_code=status)
+
+
+# Default TWS ports (paper=7497, live=7496, gateway=4001)
+IBKR_HOST = "127.0.0.1"
+IBKR_PORT = 7497
+
+
+def _ibkr_news_sync(symbol: str, days: int = 5, count: int = 5):
+    """Fetch IBKR news via subprocess using OptionPlay's venv."""
+    import socket
+    import subprocess
+    import json as _json
+
+    # Quick port check
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(2)
+    if sock.connect_ex((IBKR_HOST, IBKR_PORT)) != 0:
+        sock.close()
+        return None
+    sock.close()
+
+    # Run in OptionPlay's venv where ib_insync works with asyncio.run()
+    optionplay_dir = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "../../../OptionPlay")
+    )
+    python = os.path.join(optionplay_dir, "venv", "bin", "python")
+    if not os.path.exists(python):
+        return None
+
+    script = f"""
+import asyncio, json, sys
+sys.path.insert(0, {optionplay_dir!r})
+
+async def main():
+    from src.ibkr.bridge import get_ibkr_bridge
+    bridge = get_ibkr_bridge()
+    news = await bridge.get_news([{symbol!r}], days={days}, max_per_symbol={count})
+    import re
+    def clean(h):
+        return re.sub(r'\\{{[^}}]*\\}}', '', h).strip()
+    result = [
+        {{"title": clean(n.headline), "publisher": n.provider or "IBKR",
+          "link": None, "timestamp": 0,
+          "date": n.time or ""}}
+        for n in news
+    ]
+    print(json.dumps(result))
+
+asyncio.run(main())
+"""
+    try:
+        result = subprocess.run(
+            [python, "-c", script],
+            capture_output=True, text=True, timeout=20,
+            cwd=optionplay_dir,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return _json.loads(result.stdout.strip())
+    except Exception:
+        pass
+    return None
+
+
+async def _fetch_ibkr_news(symbol: str, days: int = 5, count: int = 5):
+    """Async wrapper: runs IBKR news fetch in thread pool."""
+    loop = asyncio.get_event_loop()
+    try:
+        return await loop.run_in_executor(
+            None, _ibkr_news_sync, symbol, days, count
+        )
+    except Exception:
+        return None
 
 
 # ── Endpoints ──
@@ -362,7 +435,6 @@ async def analyze_symbol(symbol: str):
         # Fetch analyst data (sync yfinance call, run in thread pool)
         analysts_data = None
         try:
-            import asyncio
             loop = asyncio.get_event_loop()
 
             from src.data_providers.fundamentals import get_analyst_data
@@ -376,23 +448,10 @@ async def analyze_symbol(symbol: str):
         except Exception:
             pass
 
-        # Fetch news from IBKR TWS Bridge
+        # Fetch news from IBKR TWS (direct sync connection in thread)
         news_data = None
         try:
-            ibkr_bridge = server.handlers.ibkr._ctx.ibkr_bridge
-            if ibkr_bridge and await ibkr_bridge.is_available():
-                ibkr_news = await ibkr_bridge.get_news([symbol], days=5)
-                if ibkr_news:
-                    news_data = [
-                        {
-                            "title": n.headline,
-                            "publisher": n.provider or "IBKR",
-                            "link": None,
-                            "timestamp": 0,
-                            "date": n.time or "",
-                        }
-                        for n in ibkr_news
-                    ]
+            news_data = await _fetch_ibkr_news(symbol)
         except Exception:
             pass
 
@@ -426,38 +485,18 @@ async def analyze_symbol(symbol: str):
 
 @router.get("/news/{symbol}")
 async def get_news(symbol: str, count: int = 5):
-    server = await get_server()
     symbol = symbol.upper()
 
-    # Try IBKR TWS Bridge first
+    # Try IBKR TWS first (direct sync connection)
     try:
-        if server:
-            ibkr_bridge = server.handlers.ibkr._ctx.ibkr_bridge
-            if ibkr_bridge and await ibkr_bridge.is_available():
-                ibkr_news = await ibkr_bridge.get_news(
-                    [symbol], days=5, max_per_symbol=count
-                )
-                if ibkr_news:
-                    return {
-                        "symbol": symbol,
-                        "source": "ibkr",
-                        "news": [
-                            {
-                                "title": n.headline,
-                                "publisher": n.provider or "IBKR",
-                                "link": None,
-                                "timestamp": 0,
-                                "date": n.time or "",
-                            }
-                            for n in ibkr_news
-                        ],
-                    }
+        ibkr_news = await _fetch_ibkr_news(symbol, days=5, count=count)
+        if ibkr_news:
+            return {"symbol": symbol, "source": "ibkr", "news": ibkr_news}
     except Exception:
         pass
 
     # Fallback to yfinance
     try:
-        import asyncio
         loop = asyncio.get_event_loop()
 
         from src.data_providers.yahoo_news import get_stock_news

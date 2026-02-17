@@ -1,10 +1,28 @@
 from fastapi import APIRouter
+import asyncio
 import sys
 import os
 
 # Add parent directory to path to import OptionPlay
 # This assumes OptionPlay-Web is a sibling of OptionPlay
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../OptionPlay")))
+
+# ib_insync/eventkit requires a running event loop at import time (Python 3.14+)
+# and nest_asyncio for coexistence with uvicorn's event loop.
+try:
+    asyncio.get_event_loop()
+except RuntimeError:
+    asyncio.set_event_loop(asyncio.new_event_loop())
+
+import nest_asyncio
+nest_asyncio.apply()
+
+# Patch asyncio for ib_insync compatibility
+try:
+    import ib_insync.util
+    ib_insync.util.patchAsyncio()
+except Exception:
+    pass
 
 try:
     from src.mcp_server import OptionPlayServer
