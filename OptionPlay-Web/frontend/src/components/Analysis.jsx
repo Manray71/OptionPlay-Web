@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Search, BarChart3, TrendingUp, TrendingDown, Shield, Zap, Newspaper, Users, ArrowUp, ArrowDown, Minus, Target, Activity } from 'lucide-react';
+import { Search, BarChart3, TrendingUp, TrendingDown, Shield, Zap, Newspaper, Users, ArrowUp, ArrowDown, Minus, Target, Activity, ChevronDown } from 'lucide-react';
 
 // ──────────────────────────────────────────────────────────
 // Mock data generator
@@ -76,7 +76,7 @@ function generateMockAnalysis(sym) {
             creditEstimate: '$1.20',
             maxRisk: '$380',
             returnOnRisk: '31.6%',
-            dataSource: 'calculated', // 'live' when real market data is available
+            dataSource: 'calculated',
         },
     };
 }
@@ -86,7 +86,6 @@ function generateMockAnalysis(sym) {
 // ──────────────────────────────────────────────────────────
 
 function IVPercentileGauge({ percentile, rank, ivCurrent, iv30d, iv1y, hvCurrent }) {
-    // Arc gauge
     const pct = Math.min(Math.max(percentile, 0), 100);
     const angle = (pct / 100) * 180;
     const rad = (Math.PI * (180 - angle)) / 180;
@@ -96,47 +95,42 @@ function IVPercentileGauge({ percentile, rank, ivCurrent, iv30d, iv1y, hvCurrent
 
     let color = 'var(--green)';
     let label = 'Low';
-    if (pct >= 70) { color = 'var(--red)'; label = 'High'; }
-    else if (pct >= 40) { color = 'var(--amber)'; label = 'Medium'; }
+    let glowBg = 'var(--green-glow)';
+    if (pct >= 70) { color = 'var(--red)'; label = 'High'; glowBg = 'var(--red-glow)'; }
+    else if (pct >= 40) { color = 'var(--amber)'; label = 'Medium'; glowBg = 'var(--amber-glow)'; }
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-            <svg viewBox="0 0 200 105" style={{ width: 200, height: 105 }}>
-                {/* Background arc */}
+        <div className="iv-gauge-wrap">
+            <svg viewBox="0 0 200 105" className="iv-gauge-svg">
                 <path d="M 15 90 A 85 85 0 0 1 185 90" fill="none" stroke="rgba(71,85,105,0.25)" strokeWidth="10" strokeLinecap="round" />
-                {/* Green zone 0-40% */}
                 <path d="M 15 90 A 85 85 0 0 1 47 27" fill="none" stroke="var(--green)" strokeWidth="10" strokeLinecap="round" opacity="0.5" />
-                {/* Amber zone 40-70% */}
                 <path d="M 47 27 A 85 85 0 0 1 130 13" fill="none" stroke="var(--amber)" strokeWidth="10" strokeLinecap="round" opacity="0.5" />
-                {/* Red zone 70-100% */}
                 <path d="M 130 13 A 85 85 0 0 1 185 90" fill="none" stroke="var(--red)" strokeWidth="10" strokeLinecap="round" opacity="0.5" />
-                {/* Needle */}
                 <line x1={cx} y1={cy} x2={needleX} y2={needleY} stroke={color} strokeWidth="2" strokeLinecap="round" />
                 <circle cx={cx} cy={cy} r="4" fill={color} />
             </svg>
-            <div style={{ textAlign: 'center', marginTop: -4 }}>
-                <div style={{ fontSize: 32, fontWeight: 800, color, lineHeight: 1 }}>{pct}%</div>
-                <div style={{ fontSize: 12, fontWeight: 600, color, marginTop: 4, padding: '2px 12px', borderRadius: 12, background: color === 'var(--green)' ? 'var(--green-glow)' : color === 'var(--amber)' ? 'var(--amber-glow)' : 'var(--red-glow)', display: 'inline-block' }}>
+            <div style={{ textAlign: 'center' }}>
+                <div className="iv-gauge-value" style={{ color }}>{pct}%</div>
+                <div className="iv-gauge-label" style={{ color, background: glowBg }}>
                     {label} IV
                 </div>
             </div>
-            {/* IV metrics grid */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, width: '100%', marginTop: 8 }}>
-                <div style={{ padding: '8px 10px', background: 'var(--bg-input)', borderRadius: 'var(--radius-xs)', border: '1px solid rgba(71,85,105,0.2)' }}>
-                    <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.3 }}>IV Current</div>
-                    <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginTop: 2 }}>{ivCurrent}%</div>
+            <div className="iv-metrics-grid">
+                <div className="iv-metric-cell">
+                    <div className="metric-label">IV Current</div>
+                    <div className="metric-value" style={{ color: 'var(--text-primary)' }}>{ivCurrent}%</div>
                 </div>
-                <div style={{ padding: '8px 10px', background: 'var(--bg-input)', borderRadius: 'var(--radius-xs)', border: '1px solid rgba(71,85,105,0.2)' }}>
-                    <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.3 }}>IV Rank</div>
-                    <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-accent)', marginTop: 2 }}>{rank}</div>
+                <div className="iv-metric-cell">
+                    <div className="metric-label">IV Rank</div>
+                    <div className="metric-value" style={{ color: 'var(--text-accent)' }}>{rank}</div>
                 </div>
-                <div style={{ padding: '8px 10px', background: 'var(--bg-input)', borderRadius: 'var(--radius-xs)', border: '1px solid rgba(71,85,105,0.2)' }}>
-                    <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.3 }}>IV 30d Avg</div>
-                    <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-secondary)', marginTop: 2 }}>{iv30d}%</div>
+                <div className="iv-metric-cell">
+                    <div className="metric-label">IV 30d Avg</div>
+                    <div className="metric-value" style={{ color: 'var(--text-secondary)' }}>{iv30d}%</div>
                 </div>
-                <div style={{ padding: '8px 10px', background: 'var(--bg-input)', borderRadius: 'var(--radius-xs)', border: '1px solid rgba(71,85,105,0.2)' }}>
-                    <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.3 }}>HV Current</div>
-                    <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-secondary)', marginTop: 2 }}>{hvCurrent}%</div>
+                <div className="iv-metric-cell">
+                    <div className="metric-label">HV Current</div>
+                    <div className="metric-value" style={{ color: 'var(--text-secondary)' }}>{hvCurrent}%</div>
                 </div>
             </div>
         </div>
@@ -158,18 +152,14 @@ function SRChart({ price, levels }) {
     const maxPrice = Math.max(...allPrices) * 1.03;
     const range = maxPrice - minPrice;
 
-    // Maps a price to a horizontal percentage (0% = left, 100% = right)
     const priceToX = (p) => ((p - minPrice) / range) * 100;
     const currentX = priceToX(price);
 
-    // Stagger labels above/below to avoid overlap
-    // Resistances go above, supports go below
     const resistancesSorted = [...levels.resistances].sort((a, b) => a.price - b.price);
     const supportsSorted = [...levels.supports].sort((a, b) => b.price - a.price);
 
     return (
         <div className="sr-hbar-wrap">
-            {/* Resistance labels (above the bar) */}
             <div className="sr-labels-top">
                 {resistancesSorted.map((lvl, i) => {
                     const x = priceToX(lvl.price);
@@ -196,17 +186,12 @@ function SRChart({ price, levels }) {
                 })}
             </div>
 
-            {/* The main horizontal bar */}
             <div className="sr-hbar">
-                {/* Background gradient: green left, red right with current in middle */}
                 <div className="sr-hbar-track">
-                    {/* Support zone (left of current) */}
                     <div className="sr-hbar-zone support" style={{ width: `${currentX}%` }} />
-                    {/* Resistance zone (right of current) */}
                     <div className="sr-hbar-zone resistance" style={{ width: `${100 - currentX}%` }} />
                 </div>
 
-                {/* Resistance tick marks on the bar */}
                 {levels.resistances.map((lvl, i) => {
                     const x = priceToX(lvl.price);
                     return (
@@ -216,7 +201,6 @@ function SRChart({ price, levels }) {
                     );
                 })}
 
-                {/* Support tick marks on the bar */}
                 {levels.supports.map((lvl, i) => {
                     const x = priceToX(lvl.price);
                     return (
@@ -226,7 +210,6 @@ function SRChart({ price, levels }) {
                     );
                 })}
 
-                {/* Current price needle */}
                 <div className="sr-current-needle" style={{ left: `${currentX}%` }}>
                     <div className="sr-needle-diamond" />
                     <div className="sr-needle-line" />
@@ -234,7 +217,6 @@ function SRChart({ price, levels }) {
                 </div>
             </div>
 
-            {/* Support labels (below the bar) */}
             <div className="sr-labels-bottom">
                 {supportsSorted.map((lvl, i) => {
                     const x = priceToX(lvl.price);
@@ -261,7 +243,6 @@ function SRChart({ price, levels }) {
                 })}
             </div>
 
-            {/* Price axis labels */}
             <div className="sr-price-axis">
                 <span>${minPrice.toFixed(0)}</span>
                 <span>${(minPrice + range * 0.25).toFixed(0)}</span>
@@ -275,6 +256,81 @@ function SRChart({ price, levels }) {
 
 
 // ──────────────────────────────────────────────────────────
+// Skeleton Loading
+// ──────────────────────────────────────────────────────────
+
+function AnalysisSkeleton() {
+    return (
+        <>
+            {/* Stat cards skeleton */}
+            <div className="grid-4 analysis-section fade-in">
+                {[0, 1, 2, 3].map(i => (
+                    <div key={i} className="skeleton skeleton-stat-card" />
+                ))}
+            </div>
+            {/* Strategy + IV row skeleton */}
+            <div className="analysis-strategy-row analysis-section fade-in" style={{ animationDelay: '0.05s' }}>
+                <div className="skeleton-card">
+                    <div className="skeleton skeleton-title" />
+                    <div className="skeleton skeleton-line w-80" />
+                    <div className="skeleton skeleton-line w-60" />
+                    <div className="skeleton skeleton-line w-100" />
+                    <div className="skeleton skeleton-line w-80" style={{ marginTop: 16 }} />
+                    <div className="skeleton skeleton-line w-60" />
+                </div>
+                <div className="skeleton-card">
+                    <div className="skeleton skeleton-title" />
+                    <div className="skeleton skeleton-line w-60" style={{ margin: '20px auto 10px', height: 80 }} />
+                    <div className="skeleton skeleton-line w-40" style={{ margin: '0 auto' }} />
+                </div>
+            </div>
+            {/* S/R skeleton */}
+            <div className="skeleton-card analysis-section fade-in" style={{ animationDelay: '0.1s' }}>
+                <div className="skeleton skeleton-title" />
+                <div className="skeleton skeleton-line w-100" style={{ height: 20 }} />
+                <div className="skeleton skeleton-line w-80" />
+            </div>
+        </>
+    );
+}
+
+
+// ──────────────────────────────────────────────────────────
+// Collapsible Card Header
+// ──────────────────────────────────────────────────────────
+
+function CollapsibleHeader({ icon, title, right, collapsed, onToggle }) {
+    return (
+        <button className="card-header-toggle" onClick={onToggle} type="button">
+            <div className="header-left">
+                <h3>{icon} {title}</h3>
+            </div>
+            <div className="header-right">
+                {right}
+                <ChevronDown size={16} className={`chevron${collapsed ? ' collapsed' : ''}`} />
+            </div>
+        </button>
+    );
+}
+
+
+// ──────────────────────────────────────────────────────────
+// Section Anchors
+// ──────────────────────────────────────────────────────────
+
+const SECTIONS = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'strategies', label: 'Strategies' },
+    { id: 'sr', label: 'S&R' },
+    { id: 'analysts', label: 'Analysts' },
+    { id: 'news', label: 'News' },
+    { id: 'tradeRec', label: 'Trade Rec' },
+];
+
+const POPULAR_TICKERS = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'NVDA', 'SPY', 'QQQ'];
+
+
+// ──────────────────────────────────────────────────────────
 // Main Component
 // ──────────────────────────────────────────────────────────
 
@@ -282,7 +338,19 @@ export default function Analysis({ initialSymbol, onSymbolConsumed }) {
     const [symbol, setSymbol] = useState('');
     const [result, setResult] = useState(null);
     const [loading, setLoading] = useState(false);
+    const [recentSearches, setRecentSearches] = useState([]);
+    const [collapsed, setCollapsed] = useState({});
     const hasConsumed = useRef(false);
+
+    // Section refs for anchor nav
+    const sectionRefs = {
+        overview: useRef(null),
+        strategies: useRef(null),
+        sr: useRef(null),
+        analysts: useRef(null),
+        news: useRef(null),
+        tradeRec: useRef(null),
+    };
 
     useEffect(() => {
         if (initialSymbol && !hasConsumed.current) {
@@ -294,11 +362,19 @@ export default function Analysis({ initialSymbol, onSymbolConsumed }) {
         return () => { hasConsumed.current = false; };
     }, [initialSymbol]);
 
+    const addRecentSearch = (s) => {
+        setRecentSearches(prev => {
+            const filtered = prev.filter(x => x !== s);
+            return [s, ...filtered].slice(0, 5);
+        });
+    };
+
     const runAnalysis = (sym) => {
         const s = (sym || symbol).trim().toUpperCase();
         if (!s) return;
         setLoading(true);
         setSymbol(s);
+        addRecentSearch(s);
         setTimeout(() => {
             setResult(generateMockAnalysis(s));
             setLoading(false);
@@ -306,6 +382,14 @@ export default function Analysis({ initialSymbol, onSymbolConsumed }) {
     };
 
     const handleAnalyze = () => runAnalysis(symbol);
+
+    const toggleSection = (id) => {
+        setCollapsed(prev => ({ ...prev, [id]: !prev[id] }));
+    };
+
+    const scrollToSection = (id) => {
+        sectionRefs[id]?.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
 
     return (
         <>
@@ -315,36 +399,56 @@ export default function Analysis({ initialSymbol, onSymbolConsumed }) {
             </div>
 
             <div className="page-content">
-                {/* Search */}
-                <div className="card fade-in" style={{ marginBottom: 20 }}>
-                    <div className="card-body">
-                        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
-                            <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
-                                <label className="form-label">Symbol</label>
-                                <input
-                                    className="form-input"
-                                    placeholder="Enter ticker (e.g. AAPL)"
-                                    value={symbol}
-                                    onChange={(e) => setSymbol(e.target.value.toUpperCase())}
-                                    onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()}
-                                />
-                            </div>
-                            <button className="btn btn-primary" onClick={handleAnalyze} disabled={loading} style={{ height: 42 }}>
-                                {loading ? <div className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} /> : <Search size={14} />}
-                                Analyze
-                            </button>
+                {/* Sticky Search Bar */}
+                <div className="analysis-search-sticky">
+                    <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
+                        <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+                            <label className="form-label">Symbol</label>
+                            <input
+                                className="form-input"
+                                placeholder="Enter ticker (e.g. AAPL)"
+                                value={symbol}
+                                onChange={(e) => setSymbol(e.target.value.toUpperCase())}
+                                onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()}
+                            />
                         </div>
+                        <button className="btn btn-primary" onClick={handleAnalyze} disabled={loading} style={{ height: 42 }}>
+                            {loading ? <div className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} /> : <Search size={14} />}
+                            Analyze
+                        </button>
                     </div>
+
+                    {/* Recent searches chips */}
+                    {recentSearches.length > 0 && (
+                        <div className="analysis-chips-row">
+                            <span style={{ fontSize: 11, color: 'var(--text-muted)', alignSelf: 'center' }}>Recent:</span>
+                            {recentSearches.map(s => (
+                                <button key={s} className="analysis-chip" onClick={() => runAnalysis(s)}>{s}</button>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* Section anchor nav — only when results exist */}
+                    {result && !loading && (
+                        <div className="analysis-anchor-nav">
+                            <div className="tabs">
+                                {SECTIONS.map(sec => (
+                                    <button key={sec.id} className="tab" onClick={() => scrollToSection(sec.id)}>
+                                        {sec.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
 
-                {loading && (
-                    <div className="loading-spinner" style={{ minHeight: 300 }}><div className="spinner" /></div>
-                )}
+                {/* Loading Skeleton */}
+                {loading && <AnalysisSkeleton />}
 
                 {result && !loading && (
                     <>
                         {/* ─── Overview Stats ─── */}
-                        <div className="grid-4 fade-in" style={{ marginBottom: 20 }}>
+                        <div ref={sectionRefs.overview} className="grid-4 analysis-section fade-in">
                             <div className="stat-card">
                                 <div className="stat-label">Symbol</div>
                                 <div className="stat-value" style={{ fontSize: 24 }}>{result.symbol}</div>
@@ -370,217 +474,259 @@ export default function Analysis({ initialSymbol, onSymbolConsumed }) {
                         </div>
 
                         {/* ─── Strategy Scores + IV Percentile row ─── */}
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 16, marginBottom: 20 }}>
+                        <div ref={sectionRefs.strategies} className="analysis-strategy-row analysis-section">
                             {/* Strategy Scores */}
                             <div className="card fade-in" style={{ animationDelay: '0.05s' }}>
-                                <div className="card-header">
-                                    <h3><BarChart3 size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} /> Strategy Scores</h3>
-                                </div>
-                                <div className="card-body">
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                                        {result.strategies.map((s) => (
-                                            <div key={s.name}>
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                                        <span style={{ fontWeight: 600 }}>{s.name}</span>
-                                                        <span className={`badge ${s.signal === 'Strong' ? 'badge-green' : s.signal === 'Moderate' ? 'badge-amber' : 'badge-red'}`}>{s.signal}</span>
+                                <CollapsibleHeader
+                                    icon={<BarChart3 size={14} style={{ verticalAlign: 'middle' }} />}
+                                    title="Strategy Scores"
+                                    collapsed={collapsed.strategies}
+                                    onToggle={() => toggleSection('strategies')}
+                                />
+                                <div className={`card-body-collapsible${collapsed.strategies ? ' collapsed' : ''}`}>
+                                    <div className="card-body">
+                                        <div className="strategy-list">
+                                            {result.strategies.map((s) => (
+                                                <div key={s.name}>
+                                                    <div className="strategy-item-header">
+                                                        <div className="strategy-name">
+                                                            <span>{s.name}</span>
+                                                            <span className={`badge ${s.signal === 'Strong' ? 'badge-green' : s.signal === 'Moderate' ? 'badge-amber' : 'badge-red'}`}>{s.signal}</span>
+                                                        </div>
+                                                        <span className="strategy-score-value" style={{ color: s.score >= 7 ? 'var(--green)' : s.score >= 5 ? 'var(--amber)' : 'var(--text-muted)' }}>{s.score.toFixed(1)}</span>
                                                     </div>
-                                                    <span style={{ fontWeight: 700, fontSize: 18, color: s.score >= 7 ? 'var(--green)' : s.score >= 5 ? 'var(--amber)' : 'var(--text-muted)' }}>{s.score.toFixed(1)}</span>
+                                                    <div className="strategy-score-track">
+                                                        <div className="strategy-score-fill" style={{
+                                                            width: `${(s.score / 10) * 100}%`,
+                                                            background: s.score >= 7 ? 'linear-gradient(90deg, var(--green), #34d399)' : s.score >= 5 ? 'linear-gradient(90deg, var(--amber), #fbbf24)' : 'linear-gradient(90deg, var(--text-muted), var(--border-subtle))',
+                                                        }} />
+                                                    </div>
+                                                    <div className="strategy-components">
+                                                        {Object.entries(s.components).map(([key, val]) => (
+                                                            <span key={key} className="strategy-component-chip">
+                                                                {key}: <strong>{val.toFixed(1)}</strong>
+                                                            </span>
+                                                        ))}
+                                                    </div>
                                                 </div>
-                                                <div style={{ height: 8, background: 'var(--border-subtle)', borderRadius: 4, overflow: 'hidden', marginBottom: 8 }}>
-                                                    <div style={{
-                                                        width: `${(s.score / 10) * 100}%`, height: '100%',
-                                                        background: s.score >= 7 ? 'linear-gradient(90deg, var(--green), #34d399)' : s.score >= 5 ? 'linear-gradient(90deg, var(--amber), #fbbf24)' : 'linear-gradient(90deg, var(--text-muted), var(--border-subtle))',
-                                                        borderRadius: 4, transition: 'width 0.5s ease',
-                                                    }} />
-                                                </div>
-                                                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                                                    {Object.entries(s.components).map(([key, val]) => (
-                                                        <span key={key} style={{ fontSize: 11, padding: '2px 8px', background: 'var(--bg-input)', borderRadius: 4, color: 'var(--text-secondary)' }}>
-                                                            {key}: <strong style={{ color: 'var(--text-primary)' }}>{val.toFixed(1)}</strong>
-                                                        </span>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        ))}
+                                            ))}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
 
                             {/* IV Percentile */}
                             <div className="card fade-in" style={{ animationDelay: '0.08s' }}>
-                                <div className="card-header">
-                                    <h3><Activity size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} /> IV Percentile</h3>
-                                </div>
-                                <div className="card-body">
-                                    <IVPercentileGauge
-                                        percentile={result.ivPercentile}
-                                        rank={result.ivRank}
-                                        ivCurrent={result.ivCurrent}
-                                        iv30d={result.iv30d}
-                                        iv1y={result.iv1y}
-                                        hvCurrent={result.hvCurrent}
-                                    />
+                                <CollapsibleHeader
+                                    icon={<Activity size={14} style={{ verticalAlign: 'middle' }} />}
+                                    title="IV Percentile"
+                                    collapsed={collapsed.iv}
+                                    onToggle={() => toggleSection('iv')}
+                                />
+                                <div className={`card-body-collapsible${collapsed.iv ? ' collapsed' : ''}`}>
+                                    <div className="card-body">
+                                        <IVPercentileGauge
+                                            percentile={result.ivPercentile}
+                                            rank={result.ivRank}
+                                            ivCurrent={result.ivCurrent}
+                                            iv30d={result.iv30d}
+                                            iv1y={result.iv1y}
+                                            hvCurrent={result.hvCurrent}
+                                        />
+                                    </div>
                                 </div>
                             </div>
                         </div>
 
                         {/* ─── Support & Resistance (graphical) ─── */}
-                        <div className="card fade-in" style={{ animationDelay: '0.1s', marginBottom: 20 }}>
-                            <div className="card-header">
-                                <h3><Target size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} /> Support & Resistance</h3>
-                                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Current: ${result.price} · Strength = historical confidence</span>
-                            </div>
-                            <div className="card-body">
-                                <SRChart price={result.price} levels={result.levels} />
+                        <div ref={sectionRefs.sr} className="card fade-in analysis-section" style={{ animationDelay: '0.1s' }}>
+                            <CollapsibleHeader
+                                icon={<Target size={14} style={{ verticalAlign: 'middle' }} />}
+                                title="Support & Resistance"
+                                right={<span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Current: ${result.price}</span>}
+                                collapsed={collapsed.sr}
+                                onToggle={() => toggleSection('sr')}
+                            />
+                            <div className={`card-body-collapsible${collapsed.sr ? ' collapsed' : ''}`}>
+                                <div className="card-body">
+                                    <div className="sr-chart-scroll">
+                                        <SRChart price={result.price} levels={result.levels} />
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
-                        <div className="grid-2" style={{ marginBottom: 20 }}>
+                        <div className="grid-2 analysis-section">
                             {/* ─── Analyst Scoring ─── */}
-                            <div className="card fade-in" style={{ animationDelay: '0.15s' }}>
-                                <div className="card-header">
-                                    <h3><Users size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} /> Analyst Consensus</h3>
-                                    <span className={`badge ${result.analysts.consensus === 'Buy' ? 'badge-green' : 'badge-amber'}`}>{result.analysts.consensus}</span>
-                                </div>
-                                <div className="card-body">
-                                    <div className="analyst-bar-container">
-                                        {(() => {
-                                            const a = result.analysts;
-                                            const total = a.buy + a.overweight + a.hold + a.underweight + a.sell;
-                                            return (
-                                                <>
-                                                    <div className="analyst-segment buy" style={{ width: `${(a.buy / total) * 100}%` }}>{a.buy}</div>
-                                                    <div className="analyst-segment overweight" style={{ width: `${(a.overweight / total) * 100}%` }}>{a.overweight}</div>
-                                                    <div className="analyst-segment hold" style={{ width: `${(a.hold / total) * 100}%` }}>{a.hold}</div>
-                                                    {a.underweight > 0 && <div className="analyst-segment underweight" style={{ width: `${(a.underweight / total) * 100}%` }}>{a.underweight}</div>}
-                                                    {a.sell > 0 && <div className="analyst-segment sell" style={{ width: `${(a.sell / total) * 100}%` }}>{a.sell}</div>}
-                                                </>
-                                            );
-                                        })()}
-                                    </div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 11, color: 'var(--text-muted)' }}>
-                                        <span style={{ color: 'var(--green)' }}>● Buy</span>
-                                        <span style={{ color: 'rgba(16,185,129,0.6)' }}>● Overweight</span>
-                                        <span style={{ color: 'var(--amber)' }}>● Hold</span>
-                                        <span style={{ color: 'rgba(239,68,68,0.6)' }}>● Underweight</span>
-                                        <span style={{ color: 'var(--red)' }}>● Sell</span>
-                                    </div>
-                                    <div className="analyst-grid">
-                                        <div className="analyst-metric">
-                                            <div className="analyst-metric-label">Buy</div>
-                                            <div className="analyst-metric-value" style={{ color: 'var(--green)' }}>{result.analysts.buy}</div>
+                            <div ref={sectionRefs.analysts} className="card fade-in" style={{ animationDelay: '0.15s' }}>
+                                <CollapsibleHeader
+                                    icon={<Users size={14} style={{ verticalAlign: 'middle' }} />}
+                                    title="Analyst Consensus"
+                                    right={<span className={`badge ${result.analysts.consensus === 'Buy' ? 'badge-green' : 'badge-amber'}`}>{result.analysts.consensus}</span>}
+                                    collapsed={collapsed.analysts}
+                                    onToggle={() => toggleSection('analysts')}
+                                />
+                                <div className={`card-body-collapsible${collapsed.analysts ? ' collapsed' : ''}`}>
+                                    <div className="card-body">
+                                        <div className="analyst-bar-container">
+                                            {(() => {
+                                                const a = result.analysts;
+                                                const total = a.buy + a.overweight + a.hold + a.underweight + a.sell;
+                                                return (
+                                                    <>
+                                                        <div className="analyst-segment buy" style={{ width: `${(a.buy / total) * 100}%` }}>{a.buy}</div>
+                                                        <div className="analyst-segment overweight" style={{ width: `${(a.overweight / total) * 100}%` }}>{a.overweight}</div>
+                                                        <div className="analyst-segment hold" style={{ width: `${(a.hold / total) * 100}%` }}>{a.hold}</div>
+                                                        {a.underweight > 0 && <div className="analyst-segment underweight" style={{ width: `${(a.underweight / total) * 100}%` }}>{a.underweight}</div>}
+                                                        {a.sell > 0 && <div className="analyst-segment sell" style={{ width: `${(a.sell / total) * 100}%` }}>{a.sell}</div>}
+                                                    </>
+                                                );
+                                            })()}
                                         </div>
-                                        <div className="analyst-metric">
-                                            <div className="analyst-metric-label">Hold</div>
-                                            <div className="analyst-metric-value" style={{ color: 'var(--amber)' }}>{result.analysts.hold}</div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 11, color: 'var(--text-muted)' }}>
+                                            <span style={{ color: 'var(--green)' }}>● Buy</span>
+                                            <span style={{ color: 'rgba(16,185,129,0.6)' }}>● Overweight</span>
+                                            <span style={{ color: 'var(--amber)' }}>● Hold</span>
+                                            <span style={{ color: 'rgba(239,68,68,0.6)' }}>● Underweight</span>
+                                            <span style={{ color: 'var(--red)' }}>● Sell</span>
                                         </div>
-                                        <div className="analyst-metric">
-                                            <div className="analyst-metric-label">Sell</div>
-                                            <div className="analyst-metric-value" style={{ color: 'var(--red)' }}>{result.analysts.sell}</div>
+                                        <div className="analyst-grid">
+                                            <div className="analyst-metric">
+                                                <div className="analyst-metric-label">Buy</div>
+                                                <div className="analyst-metric-value" style={{ color: 'var(--green)' }}>{result.analysts.buy}</div>
+                                            </div>
+                                            <div className="analyst-metric">
+                                                <div className="analyst-metric-label">Hold</div>
+                                                <div className="analyst-metric-value" style={{ color: 'var(--amber)' }}>{result.analysts.hold}</div>
+                                            </div>
+                                            <div className="analyst-metric">
+                                                <div className="analyst-metric-label">Sell</div>
+                                                <div className="analyst-metric-value" style={{ color: 'var(--red)' }}>{result.analysts.sell}</div>
+                                            </div>
+                                            <div className="analyst-metric">
+                                                <div className="analyst-metric-label">Target</div>
+                                                <div className="analyst-metric-value" style={{ color: 'var(--text-accent)' }}>${result.analysts.priceTarget}</div>
+                                            </div>
+                                            <div className="analyst-metric">
+                                                <div className="analyst-metric-label">Range</div>
+                                                <div className="analyst-metric-value" style={{ color: 'var(--text-secondary)', fontSize: 13 }}>${result.analysts.low}–${result.analysts.high}</div>
+                                            </div>
                                         </div>
-                                        <div className="analyst-metric">
-                                            <div className="analyst-metric-label">Target</div>
-                                            <div className="analyst-metric-value" style={{ color: 'var(--text-accent)' }}>${result.analysts.priceTarget}</div>
-                                        </div>
-                                        <div className="analyst-metric">
-                                            <div className="analyst-metric-label">Range</div>
-                                            <div className="analyst-metric-value" style={{ color: 'var(--text-secondary)', fontSize: 13 }}>${result.analysts.low}–${result.analysts.high}</div>
-                                        </div>
-                                    </div>
-                                    <div style={{ marginTop: 16 }}>
-                                        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>Price Target vs Current</div>
-                                        <div style={{ position: 'relative', height: 8, background: 'var(--border-subtle)', borderRadius: 4, overflow: 'hidden' }}>
-                                            <div style={{ position: 'absolute', left: `${((result.price - result.analysts.low) / (result.analysts.high - result.analysts.low)) * 100}%`, width: 3, height: '100%', background: 'var(--text-accent)', zIndex: 2 }} />
-                                            <div style={{ width: `${((result.analysts.priceTarget - result.analysts.low) / (result.analysts.high - result.analysts.low)) * 100}%`, height: '100%', background: 'linear-gradient(90deg, var(--green), #34d399)', borderRadius: 4 }} />
-                                        </div>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
-                                            <span>${result.analysts.low}</span>
-                                            <span style={{ color: 'var(--text-accent)' }}>Current: ${result.price}</span>
-                                            <span>${result.analysts.high}</span>
+                                        <div style={{ marginTop: 16 }}>
+                                            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>Price Target vs Current</div>
+                                            <div style={{ position: 'relative', height: 8, background: 'var(--border-subtle)', borderRadius: 4, overflow: 'hidden' }}>
+                                                <div style={{ position: 'absolute', left: `${((result.price - result.analysts.low) / (result.analysts.high - result.analysts.low)) * 100}%`, width: 3, height: '100%', background: 'var(--text-accent)', zIndex: 2 }} />
+                                                <div style={{ width: `${((result.analysts.priceTarget - result.analysts.low) / (result.analysts.high - result.analysts.low)) * 100}%`, height: '100%', background: 'linear-gradient(90deg, var(--green), #34d399)', borderRadius: 4 }} />
+                                            </div>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                                                <span>${result.analysts.low}</span>
+                                                <span style={{ color: 'var(--text-accent)' }}>Current: ${result.price}</span>
+                                                <span>${result.analysts.high}</span>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
 
                             {/* ─── News ─── */}
-                            <div className="card fade-in" style={{ animationDelay: '0.2s' }}>
-                                <div className="card-header">
-                                    <h3><Newspaper size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} /> Recent News</h3>
-                                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{result.news.length} articles</span>
-                                </div>
-                                <div className="card-body">
-                                    <div className="news-list">
-                                        {result.news.map((item, i) => (
-                                            <div key={i} className="news-item">
-                                                <div className={`news-sentiment ${item.sentiment}`} />
-                                                <div className="news-content">
-                                                    <div className="news-title">{item.title}</div>
-                                                    <div className="news-meta">
-                                                        <span>{item.source}</span>
-                                                        <span>•</span>
-                                                        <span>{item.time}</span>
-                                                        <span>•</span>
-                                                        <span className={`badge ${item.sentiment === 'positive' ? 'badge-green' : item.sentiment === 'negative' ? 'badge-red' : 'badge-indigo'}`}>
-                                                            {item.sentiment === 'positive' ? '▲ Bullish' : item.sentiment === 'negative' ? '▼ Bearish' : '— Neutral'}
-                                                        </span>
+                            <div ref={sectionRefs.news} className="card fade-in" style={{ animationDelay: '0.2s' }}>
+                                <CollapsibleHeader
+                                    icon={<Newspaper size={14} style={{ verticalAlign: 'middle' }} />}
+                                    title="Recent News"
+                                    right={<span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{result.news.length} articles</span>}
+                                    collapsed={collapsed.news}
+                                    onToggle={() => toggleSection('news')}
+                                />
+                                <div className={`card-body-collapsible${collapsed.news ? ' collapsed' : ''}`}>
+                                    <div className="card-body">
+                                        <div className="news-list">
+                                            {result.news.map((item, i) => (
+                                                <div key={i} className="news-item">
+                                                    <div className={`news-sentiment ${item.sentiment}`} />
+                                                    <div className="news-content">
+                                                        <div className="news-title">{item.title}</div>
+                                                        <div className="news-meta">
+                                                            <span>{item.source}</span>
+                                                            <span>•</span>
+                                                            <span>{item.time}</span>
+                                                            <span>•</span>
+                                                            <span className={`badge ${item.sentiment === 'positive' ? 'badge-green' : item.sentiment === 'negative' ? 'badge-red' : 'badge-indigo'}`}>
+                                                                {item.sentiment === 'positive' ? '▲ Bullish' : item.sentiment === 'negative' ? '▼ Bearish' : '— Neutral'}
+                                                            </span>
+                                                        </div>
                                                     </div>
                                                 </div>
-                                            </div>
-                                        ))}
+                                            ))}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
 
                         {/* ─── Trade Recommendation ─── */}
-                        <div className="card fade-in" style={{ animationDelay: '0.25s' }}>
-                            <div className="card-header">
-                                <h3><Zap size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} /> Trade Recommendation</h3>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                    {result.recommendation.dataSource === 'live' ? (
-                                        <span className="badge badge-green" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--green)', display: 'inline-block' }} />
-                                            Live Data
-                                        </span>
-                                    ) : (
-                                        <span className="badge badge-amber" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--amber)', display: 'inline-block' }} />
-                                            Calculated · No live data
-                                        </span>
-                                    )}
-                                    <span className="badge badge-green">Ready</span>
-                                </div>
-                            </div>
-                            <div className="card-body">
-                                <div className="grid-4">
-                                    <div><span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Strategy</span><div style={{ fontWeight: 600, marginTop: 4 }}>{result.recommendation.strategy}</div></div>
-                                    <div>
-                                        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Short Strike</span>
-                                        <div style={{ fontWeight: 600, marginTop: 4 }}>{result.recommendation.shortStrike}</div>
-                                        <div style={{ fontSize: 11, color: 'var(--text-accent)', marginTop: 2, fontFamily: "'JetBrains Mono', monospace" }}>Δ {result.recommendation.shortDelta}</div>
+                        <div ref={sectionRefs.tradeRec} className="card fade-in" style={{ animationDelay: '0.25s' }}>
+                            <CollapsibleHeader
+                                icon={<Zap size={14} style={{ verticalAlign: 'middle' }} />}
+                                title="Trade Recommendation"
+                                right={
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                        {result.recommendation.dataSource === 'live' ? (
+                                            <span className="badge badge-green" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--green)', display: 'inline-block' }} />
+                                                Live Data
+                                            </span>
+                                        ) : (
+                                            <span className="badge badge-amber" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--amber)', display: 'inline-block' }} />
+                                                Calculated
+                                            </span>
+                                        )}
+                                        <span className="badge badge-green">Ready</span>
                                     </div>
-                                    <div>
-                                        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Long Strike</span>
-                                        <div style={{ fontWeight: 600, marginTop: 4 }}>{result.recommendation.longStrike}</div>
-                                        <div style={{ fontSize: 11, color: 'var(--text-accent)', marginTop: 2, fontFamily: "'JetBrains Mono', monospace" }}>Δ {result.recommendation.longDelta}</div>
+                                }
+                                collapsed={collapsed.tradeRec}
+                                onToggle={() => toggleSection('tradeRec')}
+                            />
+                            <div className={`card-body-collapsible${collapsed.tradeRec ? ' collapsed' : ''}`}>
+                                <div className="card-body">
+                                    <div className="grid-4">
+                                        <div><span className="trade-rec-label">Strategy</span><div className="trade-rec-value">{result.recommendation.strategy}</div></div>
+                                        <div>
+                                            <span className="trade-rec-label">Short Strike</span>
+                                            <div className="trade-rec-value">{result.recommendation.shortStrike}</div>
+                                            <div className="trade-rec-delta">Δ {result.recommendation.shortDelta}</div>
+                                        </div>
+                                        <div>
+                                            <span className="trade-rec-label">Long Strike</span>
+                                            <div className="trade-rec-value">{result.recommendation.longStrike}</div>
+                                            <div className="trade-rec-delta">Δ {result.recommendation.longDelta}</div>
+                                        </div>
+                                        <div><span className="trade-rec-label">DTE</span><div className="trade-rec-value">{result.recommendation.dte} days</div></div>
+                                        <div><span className="trade-rec-label">Expiration</span><div className="trade-rec-value">{result.recommendation.expiration}</div></div>
+                                        <div><span className="trade-rec-label">Credit</span><div className="trade-rec-value" style={{ color: 'var(--green)' }}>{result.recommendation.creditEstimate}</div></div>
+                                        <div><span className="trade-rec-label">Max Risk</span><div className="trade-rec-value" style={{ color: 'var(--red)' }}>{result.recommendation.maxRisk}</div></div>
+                                        <div><span className="trade-rec-label">Return on Risk</span><div className="trade-rec-value" style={{ color: 'var(--green)' }}>{result.recommendation.returnOnRisk}</div></div>
                                     </div>
-                                    <div><span style={{ fontSize: 12, color: 'var(--text-muted)' }}>DTE</span><div style={{ fontWeight: 600, marginTop: 4 }}>{result.recommendation.dte} days</div></div>
-                                    <div><span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Expiration</span><div style={{ fontWeight: 600, marginTop: 4 }}>{result.recommendation.expiration}</div></div>
-                                    <div><span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Credit</span><div style={{ fontWeight: 600, marginTop: 4, color: 'var(--green)' }}>{result.recommendation.creditEstimate}</div></div>
-                                    <div><span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Max Risk</span><div style={{ fontWeight: 600, marginTop: 4, color: 'var(--red)' }}>{result.recommendation.maxRisk}</div></div>
-                                    <div><span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Return on Risk</span><div style={{ fontWeight: 600, marginTop: 4, color: 'var(--green)' }}>{result.recommendation.returnOnRisk}</div></div>
                                 </div>
                             </div>
                         </div>
                     </>
                 )}
 
+                {/* Enhanced Empty State */}
                 {!result && !loading && (
                     <div className="empty-state fade-in">
                         <BarChart3 size={48} />
                         <h3>Enter a symbol to begin analysis</h3>
                         <p>Get multi-strategy scoring, support & resistance levels, IV analysis, news, and analyst consensus.</p>
+                        <div style={{ marginTop: 20 }}>
+                            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>Popular tickers</div>
+                            <div className="analysis-chips-row" style={{ justifyContent: 'center' }}>
+                                {POPULAR_TICKERS.map(t => (
+                                    <button key={t} className="analysis-chip" onClick={() => { setSymbol(t); runAnalysis(t); }}>{t}</button>
+                                ))}
+                            </div>
+                        </div>
                     </div>
                 )}
             </div>
