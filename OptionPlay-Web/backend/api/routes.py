@@ -1,7 +1,6 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 import sys
 import os
-from typing import Optional
 
 # Add parent directory to path to import OptionPlay
 # This assumes OptionPlay-Web is a sibling of OptionPlay
@@ -9,7 +8,6 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.
 
 try:
     from src.mcp_server import OptionPlayServer
-    from src.mcp_tool_registry import tool_registry
 except ImportError as e:
     print(f"Error importing OptionPlay: {e}")
     # Mock for development if OptionPlay is missing

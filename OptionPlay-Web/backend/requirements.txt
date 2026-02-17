@@ -2,4 +2,7 @@ fastapi
 uvicorn
 python-dotenv
 pyyaml
+pytest
+httpx
+ruff
 
