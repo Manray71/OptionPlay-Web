@@ -186,16 +186,101 @@ async def analyze_symbol(symbol: str):
         except Exception:
             pass
 
-        # Build recommendation from top signal
+        # Build recommendation using StrikeRecommender (playbook-compliant)
         recommendation = None
-        if signals:
-            top = max(signals, key=lambda s: s.score)
-            recommendation = {
-                "strategy": top.strategy,
-                "score": top.score,
-                "strength": top.strength.value if hasattr(top.strength, "value") else str(top.strength),
-                "reason": top.reason,
-            }
+        try:
+            from src.options.strike_recommender import StrikeRecommender
+            from src.indicators.support_resistance import (
+                find_support_levels, calculate_fibonacci,
+            )
+            from src.constants.trading_rules import (
+                SPREAD_DTE_MIN, SPREAD_DTE_MAX,
+            )
+            FIBONACCI_LOOKBACK = 60
+
+            current_price = price
+            if current_price:
+                # VIX + regime for spread width decisions
+                analysis_handler = server.handlers.analysis
+                vix = await server.handlers.vix.get_vix()
+                regime = analysis_handler._ctx.vix_selector.get_regime(vix) if vix else None
+
+                # Support levels from lows
+                support_levels = find_support_levels(
+                    lows=lows, lookback=90, window=10, max_levels=5
+                )
+                support_levels = [s for s in support_levels if s < current_price]
+
+                # Fibonacci retracements
+                lookback = min(len(highs), FIBONACCI_LOOKBACK)
+                recent_high = max(highs[-lookback:])
+                recent_low = min(lows[-lookback:])
+                fib_levels = calculate_fibonacci(recent_high, recent_low)
+
+                # Options chain for real delta/credit data
+                options = await analysis_handler._get_options_chain_with_fallback(
+                    symbol, dte_min=SPREAD_DTE_MIN, dte_max=SPREAD_DTE_MAX, right="P"
+                )
+
+                options_data = None
+                if options:
+                    from datetime import date
+                    options_data = [
+                        {
+                            "strike": opt.strike,
+                            "right": "P",
+                            "bid": opt.bid,
+                            "ask": opt.ask,
+                            "delta": opt.delta,
+                            "iv": opt.implied_volatility,
+                            "dte": (opt.expiry - date.today()).days,
+                            "open_interest": opt.open_interest,
+                            "volume": opt.volume,
+                        }
+                        for opt in options
+                    ]
+
+                recommender = StrikeRecommender()
+                rec = recommender.get_recommendation(
+                    symbol=symbol,
+                    current_price=current_price,
+                    support_levels=support_levels,
+                    options_data=options_data,
+                    fib_levels=[
+                        {"level": v, "fib": k}
+                        for k, v in fib_levels.items()
+                        if v < current_price
+                    ],
+                    dte=SPREAD_DTE_MIN,
+                    regime=regime,
+                )
+                if rec:
+                    recommendation = rec.to_dict()
+                    # Add top signal context
+                    if signals:
+                        top = max(signals, key=lambda s: s.score)
+                        recommendation["top_strategy"] = top.strategy
+                        recommendation["top_score"] = top.score
+                        recommendation["top_strength"] = (
+                            top.strength.value
+                            if hasattr(top.strength, "value")
+                            else str(top.strength)
+                        )
+        except Exception:
+            # Fall back to basic signal info if strike recommendation fails
+            if signals:
+                top = max(signals, key=lambda s: s.score)
+                recommendation = {
+                    "strategy": top.strategy,
+                    "score": top.score,
+                    "strength": (
+                        top.strength.value
+                        if hasattr(top.strength, "value")
+                        else str(top.strength)
+                    ),
+                    "reason": top.reason,
+                    "data_source": "signal_only",
+                }
 
         return {
             "symbol": symbol,

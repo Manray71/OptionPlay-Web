@@ -108,12 +108,37 @@ function mapApiAnalysis(data, sym) {
     const iv = data.iv || {};
     const rec = data.recommendation || {};
 
+    // Build recommendation from StrikeRecommender data if available
+    let recommendation = mock.recommendation;
+    if (rec.short_strike && rec.long_strike) {
+        const credit = rec.estimated_credit;
+        const maxLoss = rec.max_loss;
+        const ror = (credit && maxLoss && maxLoss > 0)
+            ? `${((credit / (maxLoss / 100)) * 100).toFixed(1)}%`
+            : rec.risk_reward_ratio ? `${(rec.risk_reward_ratio * 100).toFixed(1)}%` : mock.recommendation.returnOnRisk;
+        recommendation = {
+            strategy: 'Bull-Put Spread',
+            shortStrike: rec.short_strike,
+            longStrike: rec.long_strike,
+            shortDelta: rec.estimated_delta ?? mock.recommendation.shortDelta,
+            longDelta: rec.long_delta ?? mock.recommendation.longDelta,
+            dte: rec.dte ?? mock.recommendation.dte,
+            expiration: rec.expiration ?? mock.recommendation.expiration,
+            creditEstimate: credit != null ? `$${credit.toFixed(2)}` : mock.recommendation.creditEstimate,
+            maxRisk: maxLoss != null ? `$${maxLoss.toFixed(0)}` : mock.recommendation.maxRisk,
+            returnOnRisk: ror,
+            quality: rec.quality ?? null,
+            probProfit: rec.prob_profit ?? null,
+            dataSource: rec.data_source === 'provider' ? 'live' : rec.data_source ?? 'calculated',
+        };
+    }
+
     return {
         symbol: sym,
         price: data.price ?? mock.price,
         change: mock.change,
         stability: mock.stability,
-        winRate: rec.score ? Math.min(95, 70 + rec.score * 2.5) : mock.winRate,
+        winRate: rec.top_score ? Math.min(95, 70 + rec.top_score * 2.5) : mock.winRate,
         sector: mock.sector,
         ivRank: iv.iv_rank ?? mock.ivRank,
         ivPercentile: iv.iv_percentile ?? mock.ivPercentile,
@@ -126,7 +151,7 @@ function mapApiAnalysis(data, sym) {
         levels: mock.levels,
         news: mock.news,
         analysts: mock.analysts,
-        recommendation: mock.recommendation,
+        recommendation,
         _liveData: strategies.length > 0,
     };
 }
@@ -740,13 +765,22 @@ export default function Analysis({ initialSymbol, onSymbolConsumed }) {
                                                 <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--green)', display: 'inline-block' }} />
                                                 Live Data
                                             </span>
+                                        ) : result.recommendation.dataSource === 'black_scholes' ? (
+                                            <span className="badge badge-indigo" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--text-accent)', display: 'inline-block' }} />
+                                                Black-Scholes
+                                            </span>
                                         ) : (
                                             <span className="badge badge-amber" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                                                 <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--amber)', display: 'inline-block' }} />
                                                 Calculated
                                             </span>
                                         )}
-                                        <span className="badge badge-green">Ready</span>
+                                        {result.recommendation.quality && (
+                                            <span className={`badge ${result.recommendation.quality === 'excellent' ? 'badge-green' : result.recommendation.quality === 'good' ? 'badge-green' : result.recommendation.quality === 'acceptable' ? 'badge-amber' : 'badge-red'}`}>
+                                                {result.recommendation.quality.charAt(0).toUpperCase() + result.recommendation.quality.slice(1)}
+                                            </span>
+                                        )}
                                     </div>
                                 }
                                 collapsed={collapsed.tradeRec}
@@ -771,6 +805,9 @@ export default function Analysis({ initialSymbol, onSymbolConsumed }) {
                                         <div><span className="trade-rec-label">Credit</span><div className="trade-rec-value" style={{ color: 'var(--green)' }}>{result.recommendation.creditEstimate}</div></div>
                                         <div><span className="trade-rec-label">Max Risk</span><div className="trade-rec-value" style={{ color: 'var(--red)' }}>{result.recommendation.maxRisk}</div></div>
                                         <div><span className="trade-rec-label">Return on Risk</span><div className="trade-rec-value" style={{ color: 'var(--green)' }}>{result.recommendation.returnOnRisk}</div></div>
+                                        {result.recommendation.probProfit != null && (
+                                            <div><span className="trade-rec-label">Prob. Profit</span><div className="trade-rec-value" style={{ color: 'var(--green)' }}>{result.recommendation.probProfit.toFixed(0)}%</div></div>
+                                        )}
                                     </div>
                                 </div>
                             </div>
