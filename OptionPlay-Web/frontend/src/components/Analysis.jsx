@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { Search, BarChart3, Zap, Newspaper, Users, Target, Activity, ChevronDown } from 'lucide-react';
+import { Search, BarChart3, Zap, Newspaper, Users, Target, Activity, ChevronDown, Info } from 'lucide-react';
+import { fetchAnalysisJson } from '../api';
 
 // ──────────────────────────────────────────────────────────
 // Mock data generator
@@ -78,6 +79,55 @@ function generateMockAnalysis(sym) {
             returnOnRisk: '31.6%',
             dataSource: 'calculated',
         },
+    };
+}
+
+// ── Map API response to component format ──
+
+function mapApiAnalysis(data, sym) {
+    const mock = generateMockAnalysis(sym);
+
+    const strategies = (data.strategies || []).map(s => {
+        const strength = s.strength || '';
+        const signal = strength.charAt(0).toUpperCase() + strength.slice(1).toLowerCase();
+        const breakdown = s.details?.score_breakdown?.components || {};
+        return {
+            name: (s.strategy || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+            score: s.score ?? 0,
+            signal: signal === 'Strong' || signal === 'Moderate' || signal === 'Weak' ? signal : 'Moderate',
+            components: {
+                rsi: breakdown.rsi?.score ?? 0,
+                support: breakdown.support?.score ?? 0,
+                fibonacci: breakdown.fibonacci?.score ?? 0,
+                volume: breakdown.volume?.score ?? 0,
+                ma: breakdown.ma?.score ?? 0,
+            },
+        };
+    });
+
+    const iv = data.iv || {};
+    const rec = data.recommendation || {};
+
+    return {
+        symbol: sym,
+        price: data.price ?? mock.price,
+        change: mock.change,
+        stability: mock.stability,
+        winRate: rec.score ? Math.min(95, 70 + rec.score * 2.5) : mock.winRate,
+        sector: mock.sector,
+        ivRank: iv.iv_rank ?? mock.ivRank,
+        ivPercentile: iv.iv_percentile ?? mock.ivPercentile,
+        ivCurrent: iv.current_iv ?? mock.ivCurrent,
+        iv30d: mock.iv30d,
+        iv1y: mock.iv1y,
+        hvCurrent: iv.hv_20 ?? mock.hvCurrent,
+        earningsDays: mock.earningsDays,
+        strategies: strategies.length > 0 ? strategies : mock.strategies,
+        levels: mock.levels,
+        news: mock.news,
+        analysts: mock.analysts,
+        recommendation: mock.recommendation,
+        _liveData: strategies.length > 0,
     };
 }
 
@@ -370,16 +420,25 @@ export default function Analysis({ initialSymbol, onSymbolConsumed }) {
         });
     };
 
-    const runAnalysis = (sym) => {
+    const [demoMode, setDemoMode] = useState(false);
+
+    const runAnalysis = async (sym) => {
         const s = (sym || symbol).trim().toUpperCase();
         if (!s) return;
         setLoading(true);
         setSymbol(s);
         addRecentSearch(s);
-        setTimeout(() => {
+        try {
+            const data = await fetchAnalysisJson(s);
+            if (data.error) throw new Error(data.error);
+            setResult(mapApiAnalysis(data, s));
+            setDemoMode(false);
+        } catch {
             setResult(generateMockAnalysis(s));
+            setDemoMode(true);
+        } finally {
             setLoading(false);
-        }, 800);
+        }
     };
 
     const handleAnalyze = () => runAnalysis(symbol);
@@ -397,6 +456,11 @@ export default function Analysis({ initialSymbol, onSymbolConsumed }) {
             <div className="page-header">
                 <h2>Analysis</h2>
                 <p>Multi-strategy scoring, support & resistance, IV analysis, news, and analyst consensus</p>
+                {demoMode && (
+                    <span style={{ fontSize: 11, color: 'var(--amber)', display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
+                        <Info size={12} /> Demo mode — using simulated data
+                    </span>
+                )}
             </div>
 
             <div className="page-content">
@@ -563,7 +627,7 @@ export default function Analysis({ initialSymbol, onSymbolConsumed }) {
                                 <CollapsibleHeader
                                     icon={<Users size={14} style={{ verticalAlign: 'middle' }} />}
                                     title="Analyst Consensus"
-                                    right={<span className={`badge ${result.analysts.consensus === 'Buy' ? 'badge-green' : 'badge-amber'}`}>{result.analysts.consensus}</span>}
+                                    right={<><span className="badge badge-amber" style={{ fontSize: 10, marginRight: 4 }}>Sample data</span><span className={`badge ${result.analysts.consensus === 'Buy' ? 'badge-green' : 'badge-amber'}`}>{result.analysts.consensus}</span></>}
                                     collapsed={collapsed.analysts}
                                     onToggle={() => toggleSection('analysts')}
                                 />
@@ -634,7 +698,7 @@ export default function Analysis({ initialSymbol, onSymbolConsumed }) {
                                 <CollapsibleHeader
                                     icon={<Newspaper size={14} style={{ verticalAlign: 'middle' }} />}
                                     title="Recent News"
-                                    right={<span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{result.news.length} articles</span>}
+                                    right={<><span className="badge badge-amber" style={{ fontSize: 10, marginRight: 4 }}>Sample data</span><span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{result.news.length} articles</span></>}
                                     collapsed={collapsed.news}
                                     onToggle={() => toggleSection('news')}
                                 />

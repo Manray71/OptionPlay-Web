@@ -28,6 +28,52 @@ export async function runScan(criteria = {}) {
     return res.text();
 }
 
+// ── JSON API (structured data) ──
+
+export async function fetchVixJson() {
+    const res = await fetch(`${API_BASE}/json/vix`);
+    if (!res.ok) throw new Error('Failed to fetch VIX JSON');
+    return res.json();
+}
+
+export async function fetchQuotesJson(symbols) {
+    const res = await fetch(`${API_BASE}/json/quotes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbols }),
+    });
+    if (!res.ok) throw new Error('Failed to fetch quotes');
+    return res.json();
+}
+
+export async function runScanJson(criteria = {}) {
+    const res = await fetch(`${API_BASE}/json/scan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(criteria),
+    });
+    if (!res.ok) throw new Error('Scan failed');
+    return res.json();
+}
+
+export async function fetchAnalysisJson(symbol) {
+    const res = await fetch(`${API_BASE}/json/analyze/${encodeURIComponent(symbol)}`);
+    if (!res.ok) throw new Error(`Failed to fetch analysis for ${symbol}`);
+    return res.json();
+}
+
+export async function fetchPortfolioPositions(status = 'all') {
+    const res = await fetch(`${API_BASE}/json/portfolio/positions?status=${encodeURIComponent(status)}`);
+    if (!res.ok) throw new Error('Failed to fetch portfolio positions');
+    return res.json();
+}
+
+export async function fetchPortfolioSummary() {
+    const res = await fetch(`${API_BASE}/json/portfolio/summary`);
+    if (!res.ok) throw new Error('Failed to fetch portfolio summary');
+    return res.json();
+}
+
 // Admin API
 export async function fetchConfigFiles() {
     const res = await fetch(`${API_BASE}/admin/files`);

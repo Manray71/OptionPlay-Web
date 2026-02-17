@@ -1,5 +1,6 @@
-import { Briefcase, DollarSign, Clock, ChevronDown } from 'lucide-react';
-import { useState } from 'react';
+import { Briefcase, DollarSign, Clock, ChevronDown, Info } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { fetchPortfolioPositions } from '../api';
 
 // ──────────────────────────────────────────────────────────
 // Position types:
@@ -36,6 +37,36 @@ const MOCK_POSITIONS = [
 ];
 
 const STRATEGIES_MAP = { Pullback: 'pullback', Bounce: 'bounce', Breakout: 'breakout', Trend: 'trend', 'Earnings Dip': 'dip' };
+
+// ── Map API portfolio position to component format ──
+
+function apiPositionToPortfolio(p) {
+    const shortStrike = p.short_leg?.strike ?? null;
+    const longStrike = p.long_leg?.strike ?? null;
+    const expiration = p.short_leg?.expiration ?? p.long_leg?.expiration ?? '';
+    const now = new Date();
+    const exp = new Date(expiration);
+    const dte = Math.max(0, Math.round((exp - now) / (1000 * 60 * 60 * 24)));
+    const shortPremium = Math.abs(p.short_leg?.premium ?? 0);
+    const longPremium = Math.abs(p.long_leg?.premium ?? 0);
+    const credit = shortPremium - longPremium;
+    const statusVal = p.status === 'open' ? 'open' : p.status === 'expired' ? 'expired' : 'closed';
+    return {
+        id: p.id,
+        symbol: p.symbol,
+        type: 'bull-put-spread',
+        strategy: 'Pullback',
+        shortStrike,
+        longStrike,
+        expiration,
+        dte,
+        qty: p.contracts ?? 1,
+        credit: Math.max(credit, 0),
+        currentValue: statusVal === 'open' ? Math.max(credit * 0.6, 0) : 0,
+        closedAt: p.close_premium ?? 0,
+        status: statusVal,
+    };
+}
 
 const TYPE_LABELS = {
     'bull-put-spread': 'Bull Put Spread',
@@ -149,11 +180,30 @@ const TYPE_COLORS = {
 export default function Portfolio() {
     const [collapsed, setCollapsed] = useState({});
     const [typeFilter, setTypeFilter] = useState('all');
+    const [allPositions, setAllPositions] = useState(MOCK_POSITIONS);
+    const [demoMode, setDemoMode] = useState(false);
+
+    useEffect(() => {
+        let cancelled = false;
+        async function loadData() {
+            try {
+                const data = await fetchPortfolioPositions('all');
+                if (cancelled) return;
+                if (data.error || !data.positions?.length) throw new Error('No positions');
+                setAllPositions(data.positions.map(apiPositionToPortfolio));
+                setDemoMode(false);
+            } catch {
+                if (!cancelled) setDemoMode(true);
+            }
+        }
+        loadData();
+        return () => { cancelled = true; };
+    }, []);
 
     const toggleSection = (id) => setCollapsed(prev => ({ ...prev, [id]: !prev[id] }));
 
-    const allOpen = MOCK_POSITIONS.filter((p) => p.status === 'open');
-    const allClosed = MOCK_POSITIONS.filter((p) => p.status !== 'open');
+    const allOpen = allPositions.filter((p) => p.status === 'open');
+    const allClosed = allPositions.filter((p) => p.status !== 'open');
 
     const open = typeFilter === 'all' ? allOpen : allOpen.filter(p => p.type === typeFilter);
     const closed = typeFilter === 'all' ? allClosed : allClosed.filter(p => p.type === typeFilter);
@@ -171,6 +221,11 @@ export default function Portfolio() {
             <div className="page-header">
                 <h2>Portfolio</h2>
                 <p>Track open positions and trading performance across all strategy types</p>
+                {demoMode && (
+                    <span style={{ fontSize: 11, color: 'var(--amber)', display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
+                        <Info size={12} /> Demo mode — using simulated data
+                    </span>
+                )}
             </div>
 
             <div className="page-content">

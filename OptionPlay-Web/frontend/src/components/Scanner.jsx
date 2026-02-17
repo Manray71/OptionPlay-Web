@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
-import { Play, Filter, ExternalLink, ChevronUp, ChevronDown, Search } from 'lucide-react';
+import { Play, Filter, ExternalLink, ChevronUp, ChevronDown, Search, Info } from 'lucide-react';
+import { runScanJson } from '../api';
 
 const STRATEGIES = [
     { id: 'multi', label: 'Multi-Strategy', desc: 'Best signal per symbol' },
@@ -124,16 +125,49 @@ export default function Scanner({ onSymbolClick }) {
         return rows;
     }, [results, filters, sortCol, sortDir]);
 
+    const [demoMode, setDemoMode] = useState(false);
+
     const handleScan = async () => {
         setIsScanning(true);
         setToast(null);
+        setDemoMode(false);
         const t0 = performance.now();
-        setTimeout(() => {
+        try {
+            const data = await runScanJson({
+                strategy: selectedStrategy,
+                min_score: minScore,
+                list_type: listType,
+                max_results: 20,
+            });
+            const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
+            if (data.error || !data.signals) throw new Error(data.error || 'No signals');
+            const mapped = data.signals.map((s, i) => {
+                const strength = s.strength || '';
+                return {
+                    rank: i + 1,
+                    symbol: s.symbol,
+                    strategy: (s.strategy || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+                    score: s.score ?? 0,
+                    normalized: s.score ?? 0,
+                    stability: s.details?.stability_score ?? s.details?.stability?.stability_score ?? 0,
+                    winRate: s.reliability_win_rate ? Math.round(s.reliability_win_rate * 100) : (s.details?.stability?.historical_win_rate ?? 0),
+                    sector: s.details?.sector ?? '',
+                    signal: strength.charAt(0).toUpperCase() + strength.slice(1).toLowerCase(),
+                    earningsDate: s.details?.earnings_date ?? '',
+                    earningsDays: s.details?.days_to_earnings ?? 999,
+                };
+            });
+            setResults(mapped);
+            setToast({ count: mapped.length, elapsed });
+        } catch {
+            // Fallback to mock data
             const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
             setResults(MOCK_RESULTS);
+            setDemoMode(true);
+            setToast({ count: MOCK_RESULTS.length, elapsed, error: true });
+        } finally {
             setIsScanning(false);
-            setToast({ count: MOCK_RESULTS.length, elapsed });
-        }, 1500);
+        }
     };
 
     // Auto-dismiss toast
@@ -153,6 +187,11 @@ export default function Scanner({ onSymbolClick }) {
             <div className="page-header">
                 <h2>Scanner</h2>
                 <p>Scan watchlist for trading opportunities — click a symbol to analyze</p>
+                {demoMode && (
+                    <span style={{ fontSize: 11, color: 'var(--amber)', display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
+                        <Info size={12} /> Demo mode — using simulated data
+                    </span>
+                )}
             </div>
 
             <div className="page-content">
@@ -198,7 +237,10 @@ export default function Scanner({ onSymbolClick }) {
                     {/* Toast */}
                     {toast && (
                         <div className="scanner-toast">
-                            <span>Found {toast.count} candidates in {toast.elapsed}s</span>
+                            <span>
+                                Found {toast.count} candidates in {toast.elapsed}s
+                                {toast.error && <span style={{ color: 'var(--amber)', marginLeft: 8 }}><Info size={12} style={{ verticalAlign: 'middle' }} /> Using sample data</span>}
+                            </span>
                             <button className="scanner-toast-close" onClick={() => setToast(null)}>&times;</button>
                         </div>
                     )}
