@@ -143,18 +143,19 @@ export default function Scanner({ onSymbolClick }) {
             if (data.error || !data.signals) throw new Error(data.error || 'No signals');
             const mapped = data.signals.map((s, i) => {
                 const strength = s.strength || '';
+                const stability = s.details?.stability;
                 return {
                     rank: i + 1,
                     symbol: s.symbol,
                     strategy: (s.strategy || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
                     score: s.score ?? 0,
                     normalized: s.score ?? 0,
-                    stability: s.details?.stability_score ?? s.details?.stability?.stability_score ?? 0,
-                    winRate: s.reliability_win_rate ? Math.round(s.reliability_win_rate * 100) : (s.details?.stability?.historical_win_rate ?? 0),
-                    sector: s.details?.sector ?? '',
+                    stability: stability?.score ?? s.stability_score ?? 0,
+                    winRate: s.win_rate ? Math.round(s.win_rate) : (stability?.historical_win_rate ?? 0),
+                    sector: s.sector ?? '',
                     signal: strength.charAt(0).toUpperCase() + strength.slice(1).toLowerCase(),
-                    earningsDate: s.details?.earnings_date ?? '',
-                    earningsDays: s.details?.days_to_earnings ?? 999,
+                    earningsDate: s.earnings_date ?? '',
+                    earningsDays: s.days_to_earnings ?? null,
                 };
             });
             setResults(mapped);
@@ -295,7 +296,8 @@ export default function Scanner({ onSymbolClick }) {
                                                     <option>Pullback</option>
                                                     <option>Bounce</option>
                                                     <option>Breakout</option>
-                                                    <option>Trend</option>
+                                                    <option>Trend Continuation</option>
+                                                    <option>Earnings Dip</option>
                                                 </select>
                                             </td>
                                             <td></td>
@@ -327,8 +329,14 @@ export default function Scanner({ onSymbolClick }) {
                                                 <td><ScoreBar score={r.score} /></td>
                                                 <td><span className={`badge ${r.signal === 'Strong' ? 'badge-green' : r.signal === 'Moderate' ? 'badge-amber' : 'badge-red'}`}>{r.signal}</span></td>
                                                 <td>
-                                                    <div style={{ fontSize: 13, fontWeight: 600 }}>{r.earningsDate}</div>
-                                                    <div style={{ fontSize: 11, color: r.earningsDays <= 14 ? 'var(--red)' : 'var(--text-muted)' }}>{r.earningsDays} days</div>
+                                                    {r.earningsDays != null ? (
+                                                        <>
+                                                            <div style={{ fontSize: 13, fontWeight: 600 }}>{r.earningsDate}</div>
+                                                            <div style={{ fontSize: 11, color: r.earningsDays <= 14 ? 'var(--red)' : 'var(--text-muted)' }}>{r.earningsDays}d</div>
+                                                        </>
+                                                    ) : (
+                                                        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>—</span>
+                                                    )}
                                                 </td>
                                                 <td>
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>

@@ -5,7 +5,7 @@ import { fetchPortfolioPositions } from '../api';
 // ──────────────────────────────────────────────────────────
 // Position types:
 //   bull-put-spread  — short put + long put (credit)
-//   naked-put        — short put only (credit)
+//   short-put        — short put only (credit)
 //   long-call        — long call only (debit)
 //   bull-call-spread — long call + short call (debit)
 // ──────────────────────────────────────────────────────────
@@ -17,8 +17,8 @@ const MOCK_POSITIONS = [
     { id: 'P003', symbol: 'CRM', type: 'bull-put-spread', strategy: 'Trend', shortStrike: 280, longStrike: 275, expiration: '2026-04-17', dte: 59, qty: 1, credit: 1.10, currentValue: 1.42, status: 'open' },
 
     // ── Naked Short Puts ──
-    { id: 'P004', symbol: 'AAPL', type: 'naked-put', strategy: 'Pullback', shortStrike: 215, longStrike: null, expiration: '2026-03-21', dte: 32, qty: 1, credit: 2.85, currentValue: 1.30, status: 'open' },
-    { id: 'P005', symbol: 'GOOGL', type: 'naked-put', strategy: 'Trend', shortStrike: 170, longStrike: null, expiration: '2026-04-17', dte: 59, qty: 2, credit: 3.40, currentValue: 2.10, status: 'open' },
+    { id: 'P004', symbol: 'AAPL', type: 'short-put', strategy: 'Pullback', shortStrike: 215, longStrike: null, expiration: '2026-03-21', dte: 32, qty: 1, credit: 2.85, currentValue: 1.30, status: 'open' },
+    { id: 'P005', symbol: 'GOOGL', type: 'short-put', strategy: 'Trend', shortStrike: 170, longStrike: null, expiration: '2026-04-17', dte: 59, qty: 2, credit: 3.40, currentValue: 2.10, status: 'open' },
 
     // ── Long Calls ──
     { id: 'P006', symbol: 'TSLA', type: 'long-call', strategy: 'Breakout', longStrike: 340, shortStrike: null, expiration: '2026-06-19', dte: 122, qty: 5, debit: 18.50, currentValue: 24.30, status: 'open' },
@@ -31,7 +31,7 @@ const MOCK_POSITIONS = [
     // ── Closed Trades ──
     { id: 'C001', symbol: 'AAPL', type: 'bull-put-spread', strategy: 'Pullback', shortStrike: 180, longStrike: 175, expiration: '2026-02-21', dte: 0, qty: 2, credit: 1.30, currentValue: 0.00, closedAt: 0.00, status: 'expired' },
     { id: 'C002', symbol: 'MSFT', type: 'bull-put-spread', strategy: 'Trend', shortStrike: 400, longStrike: 395, expiration: '2026-02-07', dte: 0, qty: 1, credit: 1.15, currentValue: 0.00, closedAt: 0.55, status: 'closed' },
-    { id: 'C003', symbol: 'NVDA', type: 'naked-put', strategy: 'Pullback', shortStrike: 120, longStrike: null, expiration: '2026-01-17', dte: 0, qty: 1, credit: 3.90, currentValue: 0.00, closedAt: 0.80, status: 'closed' },
+    { id: 'C003', symbol: 'NVDA', type: 'short-put', strategy: 'Pullback', shortStrike: 120, longStrike: null, expiration: '2026-01-17', dte: 0, qty: 1, credit: 3.90, currentValue: 0.00, closedAt: 0.80, status: 'closed' },
     { id: 'C004', symbol: 'TSLA', type: 'long-call', strategy: 'Breakout', longStrike: 280, shortStrike: null, expiration: '2026-01-17', dte: 0, qty: 3, debit: 14.20, currentValue: 0.00, closedAt: 22.60, status: 'closed' },
     { id: 'C005', symbol: 'META', type: 'bull-call-spread', strategy: 'Trend', longStrike: 580, shortStrike: 610, expiration: '2026-02-07', dte: 0, qty: 2, debit: 7.50, currentValue: 0.00, closedAt: 19.40, status: 'closed' },
 ];
@@ -41,6 +41,32 @@ const STRATEGIES_MAP = { Pullback: 'pullback', Bounce: 'bounce', Breakout: 'brea
 // ── Map API portfolio position to component format ──
 
 function apiPositionToPortfolio(p) {
+    // IBKR live positions (source: "ibkr") have flat fields
+    if (p.source === 'ibkr') {
+        const statusVal = p.status === 'open' ? 'open' : p.status === 'expired' ? 'expired' : 'closed';
+        const type = p.strategy?.toLowerCase()?.replace(/\s+/g, '-') || 'other';
+        return {
+            id: p.id,
+            symbol: p.symbol,
+            type,
+            strategy: '—',
+            shortStrike: p.short_strike ?? null,
+            longStrike: p.long_strike ?? null,
+            expiration: p.expiration ?? '',
+            dte: p.dte ?? 0,
+            qty: p.contracts ?? Math.abs(p.quantity ?? 1),
+            credit: p.net_credit ?? 0,
+            debit: p.debit ?? null,
+            currentValue: null,
+            closedAt: null,
+            status: statusVal,
+            maxProfit: p.max_profit,
+            maxLoss: p.max_loss,
+            noLivePnl: true,
+        };
+    }
+
+    // Local PortfolioManager positions (short_leg / long_leg format)
     const shortStrike = p.short_leg?.strike ?? null;
     const longStrike = p.long_leg?.strike ?? null;
     const expiration = p.short_leg?.expiration ?? p.long_leg?.expiration ?? '';
@@ -69,48 +95,81 @@ function apiPositionToPortfolio(p) {
 }
 
 const TYPE_LABELS = {
-    'bull-put-spread': 'Bull Put Spread',
-    'naked-put': 'Naked Put',
+    'bull-put-spread': 'Bull Put',
+    'bear-call-spread': 'Bear Call',
+    'bull-call-spread': 'Bull Call',
+    'bear-put-spread': 'Bear Put',
+    'iron-condor': 'Iron Condor',
+    'iron-butterfly': 'Iron Butterfly',
+    'call-butterfly': 'Call Butterfly',
+    'put-butterfly': 'Put Butterfly',
+    'long-straddle': 'Long Straddle',
+    'short-straddle': 'Short Straddle',
+    'long-strangle': 'Long Strangle',
+    'short-strangle': 'Short Strangle',
+    'short-put': 'Short Put',
+    'short-call': 'Short Call',
     'long-call': 'Long Call',
-    'bull-call-spread': 'Bull Call Spread',
+    'long-put': 'Long Put',
+    'stock': 'Stock',
 };
 
 // ── P&L helpers ──
 
+const CREDIT_TYPES = new Set([
+    'bull-put-spread', 'bear-call-spread', 'iron-condor', 'iron-butterfly',
+    'short-straddle', 'short-strangle', 'short-put', 'short-call',
+]);
+
 function isCredit(p) {
-    return p.type === 'bull-put-spread' || p.type === 'naked-put';
+    return CREDIT_TYPES.has(p.type);
 }
 
 function positionPnlPerContract(p) {
+    if (p.noLivePnl) return null;
     if (isCredit(p)) {
-        return (p.credit - (p.closedAt ?? p.currentValue)) * 100;
+        return (p.credit - (p.closedAt ?? p.currentValue ?? 0)) * 100;
     }
-    return ((p.closedAt ?? p.currentValue) - p.debit) * 100;
+    return ((p.closedAt ?? p.currentValue ?? 0) - p.debit) * 100;
 }
 
 function positionPnlTotal(p) {
-    return positionPnlPerContract(p) * p.qty;
+    const pnl = positionPnlPerContract(p);
+    if (pnl == null) return null;
+    return pnl * p.qty;
 }
 
 function positionPnlPct(p) {
+    const pnl = positionPnlPerContract(p);
+    if (pnl == null) return null;
     if (isCredit(p)) {
         const maxProfit = p.credit * 100;
-        return (positionPnlPerContract(p) / maxProfit) * 100;
+        return maxProfit > 0 ? (pnl / maxProfit) * 100 : 0;
     }
-    return (positionPnlPerContract(p) / (p.debit * 100)) * 100;
+    return p.debit > 0 ? (pnl / (p.debit * 100)) * 100 : 0;
 }
 
 function formatStrikes(p) {
     if (p.type === 'bull-put-spread') return `${p.shortStrike}/${p.longStrike}p`;
-    if (p.type === 'naked-put') return `${p.shortStrike}p`;
-    if (p.type === 'long-call') return `${p.longStrike}c`;
+    if (p.type === 'bear-put-spread') return `${p.longStrike}/${p.shortStrike}p`;
+    if (p.type === 'bear-call-spread') return `${p.shortStrike}/${p.longStrike}c`;
     if (p.type === 'bull-call-spread') return `${p.longStrike}/${p.shortStrike}c`;
+    if (p.type === 'iron-condor' || p.type === 'iron-butterfly') {
+        return `${p.longStrike}/${p.shortStrike}p ${p.shortCallStrike ?? p.shortStrike}/${p.longCallStrike ?? p.longStrike}c`;
+    }
+    if (p.type?.includes('butterfly')) return `${p.longStrike}/${p.shortStrike}/${p.longStrike2 ?? ''}`;
+    if (p.type?.includes('straddle')) return `${p.putStrike ?? p.shortStrike ?? p.longStrike}`;
+    if (p.type?.includes('strangle')) return `${p.putStrike ?? p.shortStrike ?? ''}/${p.callStrike ?? p.longStrike ?? ''}`;
+    if (p.type === 'short-put') return `${p.shortStrike}p`;
+    if (p.type === 'short-call') return `${p.shortStrike}c`;
+    if (p.type === 'long-call') return `${p.longStrike}c`;
+    if (p.type === 'long-put') return `${p.longStrike}p`;
     return '—';
 }
 
 function maxRisk(p) {
     if (p.type === 'bull-put-spread') return ((p.shortStrike - p.longStrike) * 100 - p.credit * 100) * p.qty;
-    if (p.type === 'naked-put') return (p.shortStrike * 100 - p.credit * 100) * p.qty;
+    if (p.type === 'short-put') return (p.shortStrike * 100 - p.credit * 100) * p.qty;
     if (p.type === 'long-call') return p.debit * 100 * p.qty;
     if (p.type === 'bull-call-spread') return p.debit * 100 * p.qty;
     return 0;
@@ -142,6 +201,13 @@ function StatusBadge({ position }) {
     const pct = positionPnlPct(position);
     const p = position;
 
+    // No live P&L — show DTE-based status only
+    if (pct == null) {
+        if (p.dte <= 7) return <span className="badge badge-amber">Expiring</span>;
+        if (p.dte <= 21) return <span className="badge badge-indigo">Monitor</span>;
+        return <span className="badge badge-indigo">Holding</span>;
+    }
+
     if (isCredit(p)) {
         if (pct >= 50) return <span className="badge badge-green">Take Profit</span>;
         if (pct < -50) return <span className="badge badge-red">Defend</span>;
@@ -168,9 +234,22 @@ function ClosedOutcomeBadge({ position }) {
 
 const TYPE_COLORS = {
     'bull-put-spread': 'badge-indigo',
-    'naked-put': 'badge-amber',
-    'long-call': 'badge-green',
+    'bear-call-spread': 'badge-red',
     'bull-call-spread': 'badge-green',
+    'bear-put-spread': 'badge-red',
+    'iron-condor': 'badge-amber',
+    'iron-butterfly': 'badge-amber',
+    'call-butterfly': 'badge-amber',
+    'put-butterfly': 'badge-amber',
+    'long-straddle': 'badge-green',
+    'short-straddle': 'badge-red',
+    'long-strangle': 'badge-green',
+    'short-strangle': 'badge-red',
+    'short-put': 'badge-amber',
+    'short-call': 'badge-red',
+    'long-call': 'badge-green',
+    'long-put': 'badge-green',
+    'stock': 'badge-indigo',
 };
 
 // ──────────────────────────────────────────────────────────
@@ -208,12 +287,14 @@ export default function Portfolio() {
     const open = typeFilter === 'all' ? allOpen : allOpen.filter(p => p.type === typeFilter);
     const closed = typeFilter === 'all' ? allClosed : allClosed.filter(p => p.type === typeFilter);
 
-    const totalPnl = allOpen.reduce((sum, p) => sum + positionPnlTotal(p), 0);
-    const totalCredit = allOpen.filter(p => isCredit(p)).reduce((sum, p) => sum + p.credit * 100 * p.qty, 0);
-    const totalDebit = allOpen.filter(p => !isCredit(p)).reduce((sum, p) => sum + p.debit * 100 * p.qty, 0);
-    const totalRisk = allOpen.reduce((sum, p) => sum + maxRisk(p), 0);
+    const totalCredit = allOpen.filter(p => isCredit(p)).reduce((sum, p) => sum + (p.credit ?? 0) * 100 * p.qty, 0);
+    const totalDebit = allOpen.filter(p => !isCredit(p)).reduce((sum, p) => sum + (p.debit ?? 0) * 100 * p.qty, 0);
+    const totalMaxProfit = allOpen.reduce((sum, p) => sum + (p.maxProfit ?? (p.credit ?? 0) * 100 * p.qty), 0);
+    const totalMaxLoss = allOpen.reduce((sum, p) => sum + (p.maxLoss ?? maxRisk(p)), 0);
 
-    const positionTypes = ['all', 'bull-put-spread', 'naked-put', 'long-call', 'bull-call-spread'];
+    // Dynamic type list from actual positions
+    const activeTypes = [...new Set(allPositions.map(p => p.type))];
+    const positionTypes = ['all', ...activeTypes];
     const typeLabels = { all: 'All', ...TYPE_LABELS };
 
     return (
@@ -232,33 +313,31 @@ export default function Portfolio() {
                 {/* Summary Cards */}
                 <div className="grid-4 fade-in" style={{ marginBottom: 20 }}>
                     <div className="stat-card">
-                        <div className="stat-label">Open Positions</div>
+                        <div className="stat-label">Open Spreads</div>
                         <div className="stat-value indigo">{allOpen.length}</div>
                         <div className="stat-change" style={{ color: 'var(--text-muted)' }}>
-                            {allOpen.filter(p => isCredit(p)).length} credit · {allOpen.filter(p => !isCredit(p)).length} debit
+                            {allOpen.filter(p => p.type === 'bull-put-spread').length} bull put spreads
                         </div>
                     </div>
                     <div className="stat-card">
-                        <div className="stat-label">Capital Deployed</div>
-                        <div className="stat-value green">${(totalCredit + totalDebit).toLocaleString()}</div>
+                        <div className="stat-label">Total Credit</div>
+                        <div className="stat-value green">${totalCredit.toLocaleString()}</div>
                         <div className="stat-change" style={{ color: 'var(--text-muted)' }}>
-                            ${totalCredit.toFixed(0)} credit · ${totalDebit.toFixed(0)} debit
+                            received across {allOpen.length} positions
                         </div>
                     </div>
                     <div className="stat-card">
-                        <div className="stat-label">Unrealized P&L</div>
-                        <div className={`stat-value ${totalPnl >= 0 ? 'green' : 'red'}`}>
-                            {totalPnl >= 0 ? '+' : ''}${totalPnl.toFixed(0)}
-                        </div>
+                        <div className="stat-label">Max Profit</div>
+                        <div className="stat-value green">${totalMaxProfit.toLocaleString()}</div>
                         <div className="stat-change" style={{ color: 'var(--text-muted)' }}>
-                            across {allOpen.length} positions
+                            if all expire worthless
                         </div>
                     </div>
                     <div className="stat-card">
-                        <div className="stat-label">Max Risk</div>
-                        <div className="stat-value red">${totalRisk.toLocaleString()}</div>
+                        <div className="stat-label">Capital at Risk</div>
+                        <div className="stat-value red">${totalMaxLoss.toLocaleString()}</div>
                         <div className="stat-change" style={{ color: 'var(--text-muted)' }}>
-                            {allClosed.length} closed trades
+                            max loss across all positions
                         </div>
                     </div>
                 </div>
@@ -297,54 +376,50 @@ export default function Portfolio() {
                                     <tr>
                                         <th>Symbol</th>
                                         <th>Type</th>
-                                        <th>Strategy</th>
                                         <th>Strikes</th>
                                         <th>Qty</th>
                                         <th>Expiration</th>
                                         <th>DTE</th>
                                         <th>Cr/Dr</th>
-                                        <th>Current</th>
-                                        <th>P&L ($)</th>
-                                        <th>P&L (%)</th>
+                                        <th>Max Profit</th>
+                                        <th>Max Loss</th>
                                         <th>Status</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {open.map((p) => {
-                                        const pnl = positionPnlTotal(p);
-                                        const pnlPct = positionPnlPct(p);
-                                        return (
-                                            <tr key={p.id}>
-                                                <td className="symbol">{p.symbol}</td>
-                                                <td><span className={`badge ${TYPE_COLORS[p.type]}`} style={{ fontSize: 10 }}>{TYPE_LABELS[p.type]}</span></td>
-                                                <td><span className={`strategy-chip strategy-${STRATEGIES_MAP[p.strategy]}`}>{p.strategy}</span></td>
-                                                <td style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13 }}>{formatStrikes(p)}</td>
-                                                <td>{p.qty}</td>
-                                                <td style={{ fontSize: 12 }}>{p.expiration}</td>
-                                                <td>
-                                                    <span style={{ color: p.dte <= 14 ? 'var(--amber)' : 'var(--text-secondary)' }}>
-                                                        {p.dte <= 7 && <Clock size={12} style={{ marginRight: 4, verticalAlign: 'middle' }} />}
-                                                        {p.dte}d
-                                                    </span>
-                                                </td>
-                                                <td>
-                                                    <span style={{ color: isCredit(p) ? 'var(--green)' : 'var(--text-accent)' }}>
-                                                        {isCredit(p) ? `+$${p.credit.toFixed(2)}` : `-$${p.debit.toFixed(2)}`}
-                                                    </span>
-                                                </td>
-                                                <td>${p.currentValue.toFixed(2)}</td>
-                                                <td style={{ fontWeight: 600, color: pnl >= 0 ? 'var(--green)' : 'var(--red)' }}>
-                                                    {pnl >= 0 ? '+' : ''}${pnl.toFixed(0)}
-                                                </td>
-                                                <td style={{ fontWeight: 600, color: pnlPct >= 0 ? 'var(--green)' : 'var(--red)' }}>
-                                                    {pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(1)}%
-                                                </td>
-                                                <td><StatusBadge position={p} /></td>
-                                            </tr>
-                                        );
-                                    })}
+                                    {open.map((p) => (
+                                        <tr key={p.id}>
+                                            <td className="symbol">{p.symbol}</td>
+                                            <td><span className={`badge ${TYPE_COLORS[p.type] || 'badge-indigo'}`} style={{ fontSize: 10 }}>{TYPE_LABELS[p.type] || p.type}</span></td>
+                                            <td style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13 }}>{formatStrikes(p)}</td>
+                                            <td>{p.qty}</td>
+                                            <td style={{ fontSize: 12 }}>{p.expiration}</td>
+                                            <td>
+                                                <span style={{ color: p.dte <= 14 ? 'var(--amber)' : 'var(--text-secondary)' }}>
+                                                    {p.dte <= 7 && <Clock size={12} style={{ marginRight: 4, verticalAlign: 'middle' }} />}
+                                                    {p.dte}d
+                                                </span>
+                                            </td>
+                                            <td>
+                                                {p.credit != null && p.credit > 0 ? (
+                                                    <span style={{ color: 'var(--green)' }}>+${p.credit.toFixed(2)}</span>
+                                                ) : p.debit != null ? (
+                                                    <span style={{ color: 'var(--text-accent)' }}>-${p.debit.toFixed(2)}</span>
+                                                ) : p.credit != null && p.credit < 0 ? (
+                                                    <span style={{ color: 'var(--text-accent)' }}>-${Math.abs(p.credit).toFixed(2)}</span>
+                                                ) : <span>—</span>}
+                                            </td>
+                                            <td style={{ color: 'var(--green)' }}>
+                                                {p.maxProfit != null ? `$${p.maxProfit.toLocaleString()}` : p.credit != null ? `$${(p.credit * p.qty * 100).toFixed(0)}` : '—'}
+                                            </td>
+                                            <td style={{ color: 'var(--red)' }}>
+                                                {p.maxLoss != null ? `$${p.maxLoss.toLocaleString()}` : '—'}
+                                            </td>
+                                            <td><StatusBadge position={p} /></td>
+                                        </tr>
+                                    ))}
                                     {open.length === 0 && (
-                                        <tr><td colSpan={12} style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>No {typeFilter !== 'all' ? TYPE_LABELS[typeFilter] : ''} positions open</td></tr>
+                                        <tr><td colSpan={10} style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>No {typeFilter !== 'all' ? TYPE_LABELS[typeFilter] : ''} positions open</td></tr>
                                     )}
                                 </tbody>
                             </table>
@@ -391,15 +466,15 @@ export default function Portfolio() {
                                                 <td>{p.qty}</td>
                                                 <td>
                                                     <span style={{ color: isCredit(p) ? 'var(--green)' : 'var(--text-accent)' }}>
-                                                        {isCredit(p) ? `+$${p.credit.toFixed(2)}` : `-$${p.debit.toFixed(2)}`}
+                                                        {isCredit(p) ? `+$${(p.credit ?? 0).toFixed(2)}` : `-$${(p.debit ?? 0).toFixed(2)}`}
                                                     </span>
                                                 </td>
                                                 <td>${(p.closedAt ?? 0).toFixed(2)}</td>
-                                                <td style={{ fontWeight: 600, color: pnl >= 0 ? 'var(--green)' : 'var(--red)' }}>
-                                                    {pnl >= 0 ? '+' : ''}${pnl.toFixed(0)}
+                                                <td style={{ fontWeight: 600, color: (pnl ?? 0) >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                                                    {pnl != null ? `${pnl >= 0 ? '+' : ''}$${pnl.toFixed(0)}` : '—'}
                                                 </td>
-                                                <td style={{ fontWeight: 600, color: pnlPct >= 0 ? 'var(--green)' : 'var(--red)' }}>
-                                                    {pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(1)}%
+                                                <td style={{ fontWeight: 600, color: (pnlPct ?? 0) >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                                                    {pnlPct != null ? `${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(1)}%` : '—'}
                                                 </td>
                                                 <td><ClosedOutcomeBadge position={p} /></td>
                                             </tr>

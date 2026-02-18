@@ -116,3 +116,19 @@ export async function fetchDbStatus() {
     if (!res.ok) throw new Error('Failed to fetch DB status');
     return res.json();
 }
+
+export async function fetchDbCoverage() {
+    const res = await fetch(`${API_BASE}/admin/db-coverage`);
+    if (!res.ok) throw new Error('Failed to fetch DB coverage');
+    return res.json();
+}
+
+export async function runFundamentalsUpdate(mode = 'full') {
+    const res = await fetch(`${API_BASE}/admin/fundamentals-update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode }),
+    });
+    if (!res.ok) throw new Error('Fundamentals update request failed');
+    return res.json();
+}

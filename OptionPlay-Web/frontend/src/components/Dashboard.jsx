@@ -42,7 +42,7 @@ const FALLBACK_MARKET = [
 
 const FALLBACK_POSITIONS = [
     { id: 'D001', symbol: 'NVDA', type: 'bull-put-spread', strategy: 'Pullback', shortStrike: 115, longStrike: 110, expiration: '2026-04-17', dte: 59, qty: 2, credit: 1.45, currentValue: 0.84, status: 'open' },
-    { id: 'D002', symbol: 'AAPL', type: 'naked-put', strategy: 'Pullback', shortStrike: 215, longStrike: null, expiration: '2026-03-21', dte: 32, qty: 1, credit: 2.85, currentValue: 1.30, status: 'open' },
+    { id: 'D002', symbol: 'AAPL', type: 'short-put', strategy: 'Pullback', shortStrike: 215, longStrike: null, expiration: '2026-03-21', dte: 32, qty: 1, credit: 2.85, currentValue: 1.30, status: 'open' },
     { id: 'D003', symbol: 'TSLA', type: 'long-call', strategy: 'Breakout', longStrike: 340, shortStrike: null, expiration: '2026-06-19', dte: 122, qty: 5, debit: 18.50, currentValue: 24.30, status: 'open' },
     { id: 'D004', symbol: 'META', type: 'bull-call-spread', strategy: 'Trend', longStrike: 620, shortStrike: 650, expiration: '2026-04-17', dte: 59, qty: 2, debit: 8.20, currentValue: 12.50, status: 'open' },
     { id: 'D005', symbol: 'AMD', type: 'bull-put-spread', strategy: 'Bounce', shortStrike: 100, longStrike: 95, expiration: '2026-03-21', dte: 32, qty: 3, credit: 1.20, currentValue: 0.87, status: 'open' },
@@ -66,6 +66,30 @@ function signalToPick(signal) {
 // ── Map API portfolio position to dashboard format ──
 
 function apiPositionToDashboard(p) {
+    // IBKR live positions have flat fields
+    if (p.source === 'ibkr') {
+        const type = p.strategy?.toLowerCase()?.replace(/\s+/g, '-') || 'other';
+        return {
+            id: p.id,
+            symbol: p.symbol,
+            type,
+            strategy: p.strategy ?? '—',
+            shortStrike: p.short_strike ?? null,
+            longStrike: p.long_strike ?? null,
+            expiration: p.expiration ?? '',
+            dte: p.dte ?? 0,
+            qty: p.contracts ?? Math.abs(p.quantity ?? 1),
+            credit: p.net_credit ?? 0,
+            debit: p.debit ?? null,
+            unrealizedPnl: p.unrealized_pnl ?? null,
+            maxProfit: p.max_profit ?? null,
+            maxLoss: p.max_loss ?? null,
+            ibkr: true,
+            status: p.status === 'open' ? 'open' : 'closed',
+        };
+    }
+
+    // Local PortfolioManager format
     const shortStrike = p.short_leg?.strike ?? null;
     const longStrike = p.long_leg?.strike ?? null;
     const expiration = p.short_leg?.expiration ?? p.long_leg?.expiration ?? '';
@@ -91,58 +115,92 @@ function apiPositionToDashboard(p) {
 
 const TYPE_LABELS = {
     'bull-put-spread': 'Bull Put',
-    'naked-put': 'Naked Put',
-    'long-call': 'Long Call',
+    'bear-call-spread': 'Bear Call',
     'bull-call-spread': 'Bull Call',
+    'bear-put-spread': 'Bear Put',
+    'iron-condor': 'Iron Condor',
+    'iron-butterfly': 'Iron Bfly',
+    'call-butterfly': 'Call Bfly',
+    'put-butterfly': 'Put Bfly',
+    'short-straddle': 'Short Straddle',
+    'long-straddle': 'Long Straddle',
+    'short-strangle': 'Short Strangle',
+    'long-strangle': 'Long Strangle',
+    'short-put': 'Naked Put',
+    'short-call': 'Naked Call',
+    'long-call': 'Long Call',
+    'long-put': 'Long Put',
+    'stock': 'Stock',
 };
 
 const TYPE_COLORS = {
     'bull-put-spread': 'badge-indigo',
-    'naked-put': 'badge-amber',
-    'long-call': 'badge-green',
+    'bear-call-spread': 'badge-amber',
     'bull-call-spread': 'badge-green',
+    'bear-put-spread': 'badge-red',
+    'iron-condor': 'badge-indigo',
+    'iron-butterfly': 'badge-indigo',
+    'call-butterfly': 'badge-green',
+    'put-butterfly': 'badge-amber',
+    'short-straddle': 'badge-amber',
+    'long-straddle': 'badge-green',
+    'short-strangle': 'badge-amber',
+    'long-strangle': 'badge-green',
+    'short-put': 'badge-amber',
+    'short-call': 'badge-red',
+    'long-call': 'badge-green',
+    'long-put': 'badge-red',
+    'stock': 'badge-indigo',
 };
 
 // ── P&L helpers ──
 
 function isCredit(p) {
-    return p.type === 'bull-put-spread' || p.type === 'naked-put';
-}
-
-function positionPnlPerContract(p) {
-    if (isCredit(p)) return (p.credit - p.currentValue) * 100;
-    return (p.currentValue - p.debit) * 100;
+    return p.type === 'bull-put-spread' || p.type === 'short-put';
 }
 
 function positionPnlTotal(p) {
-    return positionPnlPerContract(p) * p.qty;
+    if (p.ibkr && p.unrealizedPnl != null) return p.unrealizedPnl;
+    if (isCredit(p) && p.currentValue != null) return (p.credit - p.currentValue) * 100 * p.qty;
+    if (p.currentValue != null && p.debit) return (p.currentValue - p.debit) * 100 * p.qty;
+    return 0;
 }
 
 function positionPnlPct(p) {
-    if (isCredit(p)) return (positionPnlPerContract(p) / (p.credit * 100)) * 100;
-    return (positionPnlPerContract(p) / (p.debit * 100)) * 100;
+    if (p.ibkr && p.unrealizedPnl != null) {
+        const basis = p.maxLoss || (p.credit ? p.credit * p.qty * 100 : p.debit ? p.debit * p.qty * 100 : 1);
+        return basis ? (p.unrealizedPnl / basis) * 100 : 0;
+    }
+    if (isCredit(p) && p.currentValue != null && p.credit) {
+        return ((p.credit - p.currentValue) / p.credit) * 100;
+    }
+    if (p.currentValue != null && p.debit) {
+        return ((p.currentValue - p.debit) / p.debit) * 100;
+    }
+    return 0;
 }
 
 function formatStrikes(p) {
-    if (p.type === 'bull-put-spread') return `${p.shortStrike}/${p.longStrike}p`;
-    if (p.type === 'naked-put') return `${p.shortStrike}p`;
-    if (p.type === 'long-call') return `${p.longStrike}c`;
-    if (p.type === 'bull-call-spread') return `${p.longStrike}/${p.shortStrike}c`;
+    const t = p.type;
+    if (t === 'bull-put-spread' || t === 'bear-put-spread') return `${p.shortStrike}/${p.longStrike}p`;
+    if (t === 'bull-call-spread' || t === 'bear-call-spread') return `${p.longStrike}/${p.shortStrike}c`;
+    if (t === 'short-put' || t === 'long-put') return `${p.shortStrike ?? p.longStrike}p`;
+    if (t === 'short-call' || t === 'long-call') return `${p.longStrike ?? p.shortStrike}c`;
+    if (p.shortStrike && p.longStrike) return `${p.shortStrike}/${p.longStrike}`;
+    if (p.shortStrike) return `${p.shortStrike}`;
+    if (p.longStrike) return `${p.longStrike}`;
     return '—';
 }
 
 function StatusBadge({ position }) {
-    const pct = positionPnlPct(position);
+    const pnl = positionPnlTotal(position);
     const p = position;
-    if (isCredit(p)) {
-        if (pct >= 50) return <span className="badge badge-green">Take Profit</span>;
-        if (pct < -50) return <span className="badge badge-red">Defend</span>;
-        if (p.dte <= 7) return <span className="badge badge-amber">Expiring</span>;
-        return <span className="badge badge-indigo">Holding</span>;
-    }
-    if (pct >= 50) return <span className="badge badge-green">Take Profit</span>;
-    if (pct <= -30) return <span className="badge badge-red">Watch</span>;
-    if (p.dte <= 14) return <span className="badge badge-amber">Time Decay</span>;
+    if (p.dte <= 7) return <span className="badge badge-amber">Expiring</span>;
+    if (p.ibkr && p.maxProfit && pnl >= p.maxProfit * 0.5) return <span className="badge badge-green">Take Profit</span>;
+    if (p.ibkr && p.maxLoss && pnl <= -p.maxLoss * 0.5) return <span className="badge badge-red">Defend</span>;
+    if (pnl > 0) return <span className="badge badge-green">Profit</span>;
+    if (pnl < 0 && p.dte <= 14) return <span className="badge badge-amber">Watch</span>;
+    if (pnl < 0) return <span className="badge badge-red">Loss</span>;
     return <span className="badge badge-indigo">Holding</span>;
 }
 
@@ -300,8 +358,12 @@ export default function Dashboard({ onSymbolClick }) {
             } else { usedFallback = true; }
 
             // Portfolio positions
-            if (results[3].status === 'fulfilled' && results[3].value.positions?.length) {
-                setPositions(results[3].value.positions.map(apiPositionToDashboard));
+            if (results[3].status === 'fulfilled' && results[3].value.positions) {
+                if (results[3].value.positions.length) {
+                    setPositions(results[3].value.positions.map(apiPositionToDashboard));
+                } else {
+                    setPositions([]);
+                }
             } else { usedFallback = true; }
 
             setDemoMode(usedFallback);
@@ -481,57 +543,63 @@ export default function Dashboard({ onSymbolClick }) {
                                 onToggle={() => toggleSection('positions')}
                             />
                             <div className={`card-body-collapsible${collapsed.positions ? ' collapsed' : ''}`}>
-                                <div style={{ overflowX: 'auto' }}>
-                                    <table className="data-table">
-                                        <thead>
-                                            <tr>
-                                                <th>Symbol</th>
-                                                <th>Type</th>
-                                                <th>Strategy</th>
-                                                <th>Strikes</th>
-                                                <th>Qty</th>
-                                                <th>DTE</th>
-                                                <th>P&L ($)</th>
-                                                <th>P&L (%)</th>
-                                                <th>Status</th>
-                                                <th></th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {positions.map((p) => {
-                                                const pnl = positionPnlTotal(p);
-                                                const pnlPct = positionPnlPct(p);
-                                                return (
-                                                    <tr
-                                                        key={p.id}
-                                                        onClick={() => onSymbolClick?.(p.symbol)}
-                                                        className="clickable-row"
-                                                    >
-                                                        <td className="symbol">{p.symbol}</td>
-                                                        <td><span className={`badge ${TYPE_COLORS[p.type]}`} style={{ fontSize: 10 }}>{TYPE_LABELS[p.type]}</span></td>
-                                                        <td><StrategyBadge strategy={p.strategy} /></td>
-                                                        <td style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13 }}>{formatStrikes(p)}</td>
-                                                        <td>{p.qty}</td>
-                                                        <td>
-                                                            <span style={{ color: p.dte <= 14 ? 'var(--amber)' : 'var(--text-secondary)' }}>
-                                                                {p.dte <= 7 && <Clock size={12} style={{ marginRight: 4, verticalAlign: 'middle' }} />}
-                                                                {p.dte}d
-                                                            </span>
-                                                        </td>
-                                                        <td style={{ fontWeight: 600, color: pnl >= 0 ? 'var(--green)' : 'var(--red)' }}>
-                                                            {pnl >= 0 ? '+' : ''}${pnl.toFixed(0)}
-                                                        </td>
-                                                        <td style={{ fontWeight: 600, color: pnlPct >= 0 ? 'var(--green)' : 'var(--red)' }}>
-                                                            {pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(1)}%
-                                                        </td>
-                                                        <td><StatusBadge position={p} /></td>
-                                                        <td><ExternalLink size={14} style={{ color: 'var(--text-muted)', opacity: 0.5 }} /></td>
-                                                    </tr>
-                                                );
-                                            })}
-                                        </tbody>
-                                    </table>
-                                </div>
+                                {positions.length === 0 ? (
+                                    <div className="card-body" style={{ textAlign: 'center', padding: '32px 20px', color: 'var(--text-muted)' }}>
+                                        No active positions — paper TWS account is empty
+                                    </div>
+                                ) : (
+                                    <div style={{ overflowX: 'auto' }}>
+                                        <table className="data-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Symbol</th>
+                                                    <th>Type</th>
+                                                    <th>Strategy</th>
+                                                    <th>Strikes</th>
+                                                    <th>Qty</th>
+                                                    <th>DTE</th>
+                                                    <th>P&L ($)</th>
+                                                    <th>P&L (%)</th>
+                                                    <th>Status</th>
+                                                    <th></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {positions.map((p) => {
+                                                    const pnl = positionPnlTotal(p);
+                                                    const pnlPct = positionPnlPct(p);
+                                                    return (
+                                                        <tr
+                                                            key={p.id}
+                                                            onClick={() => onSymbolClick?.(p.symbol)}
+                                                            className="clickable-row"
+                                                        >
+                                                            <td className="symbol">{p.symbol}</td>
+                                                            <td><span className={`badge ${TYPE_COLORS[p.type] || 'badge-indigo'}`} style={{ fontSize: 10 }}>{TYPE_LABELS[p.type] || p.type}</span></td>
+                                                            <td>{p.ibkr ? <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Live</span> : <StrategyBadge strategy={p.strategy} />}</td>
+                                                            <td style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13 }}>{formatStrikes(p)}</td>
+                                                            <td>{p.qty}</td>
+                                                            <td>
+                                                                <span style={{ color: p.dte <= 14 ? 'var(--amber)' : 'var(--text-secondary)' }}>
+                                                                    {p.dte <= 7 && <Clock size={12} style={{ marginRight: 4, verticalAlign: 'middle' }} />}
+                                                                    {p.dte}d
+                                                                </span>
+                                                            </td>
+                                                            <td style={{ fontWeight: 600, color: pnl >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                                                                {pnl >= 0 ? '+' : ''}${pnl.toFixed(0)}
+                                                            </td>
+                                                            <td style={{ fontWeight: 600, color: pnlPct >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                                                                {pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(1)}%
+                                                            </td>
+                                                            <td><StatusBadge position={p} /></td>
+                                                            <td><ExternalLink size={14} style={{ color: 'var(--text-muted)', opacity: 0.5 }} /></td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </>
