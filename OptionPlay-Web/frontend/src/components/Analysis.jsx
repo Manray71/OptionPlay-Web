@@ -165,7 +165,7 @@ function mapApiAnalysis(data, sym) {
                 sentiment: 'neutral',
             }))
             : mock.news,
-        analysts: data.analysts && data.analysts.total_ratings > 0
+        analysts: data.analysts && (data.analysts.total_ratings > 0 || data.analysts.target_median)
             ? {
                 buy: data.analysts.buy ?? 0,
                 overweight: 0,
@@ -180,7 +180,7 @@ function mapApiAnalysis(data, sym) {
             }
             : mock.analysts,
         _newsLive: !!data.news?.length,
-        _analystsLive: !!(data.analysts && data.analysts.total_ratings > 0),
+        _analystsLive: !!(data.analysts && (data.analysts.total_ratings > 0 || data.analysts.target_median)),
         recommendation,
         _liveData: strategies.length > 0,
     };
@@ -578,7 +578,7 @@ export default function Analysis({ initialSymbol, onSymbolConsumed, analysisCach
                             </div>
                             <div className="stat-card">
                                 <div className="stat-label">Price</div>
-                                <div className="stat-value indigo">${result.price}</div>
+                                <div className="stat-value indigo">${Number(result.price).toFixed(2)}</div>
                                 <div className="stat-change" style={{ color: result.change >= 0 ? 'var(--green)' : 'var(--red)' }}>
                                     {result.change >= 0 ? '+' : ''}{result.change}%
                                 </div>
@@ -665,7 +665,7 @@ export default function Analysis({ initialSymbol, onSymbolConsumed, analysisCach
                             <CollapsibleHeader
                                 icon={<Target size={14} style={{ verticalAlign: 'middle' }} />}
                                 title="Support & Resistance"
-                                right={<span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Current: ${result.price}</span>}
+                                right={<span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Current: ${Number(result.price).toFixed(2)}</span>}
                                 collapsed={collapsed.sr}
                                 onToggle={() => toggleSection('sr')}
                             />

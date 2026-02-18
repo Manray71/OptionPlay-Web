@@ -762,7 +762,7 @@ async def analyze_symbol(symbol: str):
                 None, get_analyst_data, symbol
             )
 
-            if analysts_raw and analysts_raw.get("total_ratings", 0) > 0:
+            if analysts_raw and (analysts_raw.get("total_ratings", 0) > 0 or analysts_raw.get("target_median")):
                 analysts_data = analysts_raw
         except Exception:
             pass
