@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
-import { Play, Filter, ExternalLink, ChevronUp, ChevronDown, Search, Info } from 'lucide-react';
+import { Play, Filter, ExternalLink, ChevronUp, ChevronDown, Search, Info, Download } from 'lucide-react';
 import { runScanJson } from '../api';
+import { exportScannerPdf } from '../utils/exportScannerPdf';
 
 const STRATEGIES = [
     { id: 'multi', label: 'Multi-Strategy', desc: 'Best signal per symbol' },
@@ -134,6 +135,12 @@ export default function Scanner({ onSymbolClick, scanResults, setScanResults, sc
         return rows;
     }, [results, filters, sortCol, sortDir]);
 
+    const handleExportPdf = useCallback(() => {
+        if (!processedResults || processedResults.length === 0) return;
+        const strategyLabel = STRATEGIES.find(s => s.id === selectedStrategy)?.label || selectedStrategy;
+        exportScannerPdf(processedResults, { strategy: strategyLabel, scanTime });
+    }, [processedResults, selectedStrategy, scanTime]);
+
     const [demoMode, setDemoMode] = useState(false);
 
     const handleScan = async () => {
@@ -262,6 +269,9 @@ export default function Scanner({ onSymbolClick, scanResults, setScanResults, sc
                     <div className="card-header">
                         <h3><Filter size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} /> Scan Results</h3>
                         <span style={{ fontSize: 12, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <button className="btn btn-secondary" onClick={handleExportPdf} disabled={!processedResults || processedResults.length === 0} style={{ padding: '4px 10px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                <Download size={12} /> PDF
+                            </button>
                             {results === null
                                 ? '0 candidates'
                                 : <>
