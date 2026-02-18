@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import {
     LayoutDashboard,
     Search,
@@ -25,6 +25,13 @@ function App() {
     const [activePage, setActivePage] = useState('dashboard');
     const [analysisSymbol, setAnalysisSymbol] = useState('');
 
+    // Lifted scanner state so results persist across page switches
+    const [scanResults, setScanResults] = useState(null);
+    const [scanTime, setScanTime] = useState(null);
+
+    // Analysis cache — pre-fetched after scan completes
+    const analysisCacheRef = useRef({});
+
     // Navigate to analysis with a pre-selected symbol
     const navigateToAnalysis = useCallback((symbol) => {
         setAnalysisSymbol(symbol);
@@ -34,8 +41,8 @@ function App() {
     const renderPage = () => {
         switch (activePage) {
             case 'dashboard': return <Dashboard onSymbolClick={navigateToAnalysis} />;
-            case 'scanner': return <Scanner onSymbolClick={navigateToAnalysis} />;
-            case 'analysis': return <Analysis initialSymbol={analysisSymbol} onSymbolConsumed={() => setAnalysisSymbol('')} />;
+            case 'scanner': return <Scanner onSymbolClick={navigateToAnalysis} scanResults={scanResults} setScanResults={setScanResults} scanTime={scanTime} setScanTime={setScanTime} analysisCache={analysisCacheRef} />;
+            case 'analysis': return <Analysis initialSymbol={analysisSymbol} onSymbolConsumed={() => setAnalysisSymbol('')} analysisCache={analysisCacheRef} />;
             case 'portfolio': return <Portfolio />;
             case 'admin': return <Admin />;
             default: return <Dashboard onSymbolClick={navigateToAnalysis} />;

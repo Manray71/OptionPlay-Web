@@ -440,7 +440,7 @@ const POPULAR_TICKERS = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'NVDA', 'SPY',
 // Main Component
 // ──────────────────────────────────────────────────────────
 
-export default function Analysis({ initialSymbol, onSymbolConsumed }) {
+export default function Analysis({ initialSymbol, onSymbolConsumed, analysisCache }) {
     const [symbol, setSymbol] = useState('');
     const [result, setResult] = useState(null);
     const [loading, setLoading] = useState(false);
@@ -485,7 +485,9 @@ export default function Analysis({ initialSymbol, onSymbolConsumed }) {
         setSymbol(s);
         addRecentSearch(s);
         try {
-            const data = await fetchAnalysisJson(s);
+            // Check pre-fetch cache first
+            const cached = analysisCache?.current?.[s];
+            const data = cached || await fetchAnalysisJson(s);
             if (data.error) throw new Error(data.error);
             setResult(mapApiAnalysis(data, s));
             setDemoMode(false);

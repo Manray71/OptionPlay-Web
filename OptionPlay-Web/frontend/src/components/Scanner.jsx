@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { Play, Filter, ExternalLink, ChevronUp, ChevronDown, Search, Info } from 'lucide-react';
-import { runScanJson } from '../api';
+import { runScanJson, fetchAnalysisJson } from '../api';
 
 const STRATEGIES = [
     { id: 'multi', label: 'Multi-Strategy', desc: 'Best signal per symbol' },
@@ -55,11 +55,12 @@ function ScoreBar({ score, max = 10 }) {
     );
 }
 
-export default function Scanner({ onSymbolClick }) {
+export default function Scanner({ onSymbolClick, scanResults, setScanResults, scanTime, setScanTime, analysisCache }) {
     const [selectedStrategy, setSelectedStrategy] = useState('multi');
     const [minScore, setMinScore] = useState(3.5);
     const [listType, setListType] = useState('stable');
-    const [results, setResults] = useState(null);
+    const results = scanResults;
+    const setResults = setScanResults;
     const [isScanning, setIsScanning] = useState(false);
 
     // Toast state
@@ -127,10 +128,44 @@ export default function Scanner({ onSymbolClick }) {
 
     const [demoMode, setDemoMode] = useState(false);
 
+    // Pre-fetch progress
+    const [prefetchProgress, setPrefetchProgress] = useState(null); // { done, total }
+
+    const prefetchAnalyses = useCallback((symbols) => {
+        if (!analysisCache || !symbols.length) return;
+        const cache = analysisCache.current;
+        const toFetch = symbols.filter(s => !cache[s]);
+        if (!toFetch.length) {
+            setPrefetchProgress({ done: symbols.length, total: symbols.length });
+            return;
+        }
+        let done = symbols.length - toFetch.length;
+        const total = symbols.length;
+        setPrefetchProgress({ done, total });
+
+        // Fetch 3 at a time to avoid overwhelming the backend
+        const queue = [...toFetch];
+        const CONCURRENCY = 3;
+        const next = () => {
+            const sym = queue.shift();
+            if (!sym) return Promise.resolve();
+            return fetchAnalysisJson(sym)
+                .then(data => { if (!data.error) cache[sym] = data; })
+                .catch(() => {})
+                .finally(() => {
+                    done++;
+                    setPrefetchProgress({ done, total });
+                    return next();
+                });
+        };
+        Promise.all(Array.from({ length: CONCURRENCY }, () => next()));
+    }, [analysisCache]);
+
     const handleScan = async () => {
         setIsScanning(true);
         setToast(null);
         setDemoMode(false);
+        setPrefetchProgress(null);
         const t0 = performance.now();
         try {
             const data = await runScanJson({
@@ -159,7 +194,10 @@ export default function Scanner({ onSymbolClick }) {
                 };
             });
             setResults(mapped);
+            setScanTime(new Date());
             setToast({ count: mapped.length, elapsed });
+            // Pre-fetch analysis for all results in background
+            prefetchAnalyses(mapped.map(r => r.symbol));
         } catch {
             // Fallback to mock data
             const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
@@ -247,13 +285,23 @@ export default function Scanner({ onSymbolClick }) {
                     )}
 
                     <div className="card-header">
-                        <h3><Filter size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} /> Scan Results ({today})</h3>
-                        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                        <h3><Filter size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} /> Scan Results</h3>
+                        <span style={{ fontSize: 12, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 8 }}>
                             {results === null
                                 ? '0 candidates'
-                                : hasActiveFilters
-                                    ? `${shownCount} of ${totalCount} candidates`
-                                    : `${totalCount} candidates`}
+                                : <>
+                                    {hasActiveFilters ? `${shownCount} of ${totalCount}` : totalCount} candidates
+                                    {scanTime && <> &middot; {scanTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</>}
+                                </>}
+                            {prefetchProgress && prefetchProgress.done < prefetchProgress.total && (
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--text-muted)' }}>
+                                    <div className="spinner" style={{ width: 10, height: 10, borderWidth: 1.5 }} />
+                                    Loading analyses {prefetchProgress.done}/{prefetchProgress.total}
+                                </span>
+                            )}
+                            {prefetchProgress && prefetchProgress.done === prefetchProgress.total && results && (
+                                <span style={{ color: 'var(--green)' }}>All analyses loaded</span>
+                            )}
                         </span>
                     </div>
                     <div className="card-body" style={{ padding: 0 }}>
