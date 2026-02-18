@@ -38,12 +38,37 @@ function App() {
 
     const prefetchAnalyses = useCallback((symbols) => {
         const cache = analysisCacheRef.current;
+
+        // Extract trade rec fields from analysis and merge into scan results
+        const enrichScanResult = (sym, data) => {
+            const rec = data.recommendation || {};
+            const credit = rec.estimated_credit;
+            const quality = rec.quality;
+            const shortStrike = rec.short_strike;
+            const longStrike = rec.long_strike;
+            setScanResults(prev => {
+                if (!prev) return prev;
+                return prev.map(r => r.symbol === sym
+                    ? { ...r, credit: credit ?? null, tradeQuality: quality ?? 'none', shortStrike: shortStrike ?? null, longStrike: longStrike ?? null }
+                    : r
+                );
+            });
+        };
+
+        // Enrich from already-cached analyses immediately
+        const alreadyCached = symbols.filter(s => cache[s]);
+        if (alreadyCached.length) {
+            for (const sym of alreadyCached) {
+                enrichScanResult(sym, cache[sym]);
+            }
+        }
+
         const toFetch = symbols.filter(s => !cache[s]);
         if (!toFetch.length) {
             setPrefetchProgress({ done: symbols.length, total: symbols.length });
             return;
         }
-        let done = symbols.length - toFetch.length;
+        let done = alreadyCached.length;
         const total = symbols.length;
         setPrefetchProgress({ done, total });
 
@@ -53,7 +78,12 @@ function App() {
             const sym = queue.shift();
             if (!sym) return Promise.resolve();
             return fetchAnalysisJson(sym)
-                .then(data => { if (!data.error) cache[sym] = data; })
+                .then(data => {
+                    if (!data.error) {
+                        cache[sym] = data;
+                        enrichScanResult(sym, data);
+                    }
+                })
                 .catch(() => {})
                 .finally(() => {
                     done++;
@@ -62,7 +92,7 @@ function App() {
                 });
         };
         Promise.all(Array.from({ length: CONCURRENCY }, () => next()));
-    }, []);
+    }, [setScanResults]);
 
     // Navigate to analysis with a pre-selected symbol
     const navigateToAnalysis = useCallback((symbol) => {

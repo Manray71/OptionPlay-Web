@@ -91,17 +91,16 @@ function mapApiAnalysis(data, sym) {
         const strength = s.strength || '';
         const signal = strength.charAt(0).toUpperCase() + strength.slice(1).toLowerCase();
         const breakdown = s.details?.score_breakdown?.components || {};
+        const components = {};
+        for (const [key, val] of Object.entries(breakdown)) {
+            const score = typeof val === 'object' ? (val.score ?? 0) : (typeof val === 'number' ? val : 0);
+            if (score > 0) components[key] = score;
+        }
         return {
             name: (s.strategy || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
             score: s.score ?? 0,
             signal: signal === 'Strong' || signal === 'Moderate' || signal === 'Weak' ? signal : 'Moderate',
-            components: {
-                rsi: breakdown.rsi?.score ?? 0,
-                support: breakdown.support?.score ?? 0,
-                fibonacci: breakdown.fibonacci?.score ?? 0,
-                volume: breakdown.volume?.score ?? 0,
-                ma: breakdown.ma?.score ?? 0,
-            },
+            components,
         };
     });
 
@@ -115,7 +114,7 @@ function mapApiAnalysis(data, sym) {
         const maxLoss = rec.max_loss;
         const ror = (credit && maxLoss && maxLoss > 0)
             ? `${((credit / (maxLoss / 100)) * 100).toFixed(1)}%`
-            : rec.risk_reward_ratio ? `${(rec.risk_reward_ratio * 100).toFixed(1)}%` : mock.recommendation.returnOnRisk;
+            : rec.risk_reward_ratio ? `${(rec.risk_reward_ratio * 100).toFixed(1)}%` : null;
         recommendation = {
             strategy: 'Bull-Put Spread',
             shortStrike: rec.short_strike,
@@ -126,9 +125,9 @@ function mapApiAnalysis(data, sym) {
             shortStrikeReason: rec.short_strike_reason,
             dte: rec.dte ?? mock.recommendation.dte,
             expiration: rec.expiration ?? mock.recommendation.expiration,
-            creditEstimate: credit != null ? `$${credit.toFixed(2)}` : mock.recommendation.creditEstimate,
-            maxRisk: maxLoss != null ? `$${maxLoss.toFixed(0)}` : mock.recommendation.maxRisk,
-            maxProfit: rec.max_profit != null ? `$${rec.max_profit.toFixed(0)}` : null,
+            creditEstimate: credit != null ? `$${credit.toFixed(2)}` : null,
+            maxRisk: maxLoss != null ? `$${maxLoss.toFixed(2)}` : null,
+            maxProfit: rec.max_profit != null ? `$${rec.max_profit.toFixed(2)}` : null,
             breakEven: rec.break_even,
             returnOnRisk: ror,
             quality: rec.quality ?? null,
@@ -627,7 +626,7 @@ export default function Analysis({ initialSymbol, onSymbolConsumed, analysisCach
                                                     <div className="strategy-components">
                                                         {Object.entries(s.components).map(([key, val]) => (
                                                             <span key={key} className="strategy-component-chip">
-                                                                {key}: <strong>{val.toFixed(1)}</strong>
+                                                                {key.replace(/_/g, ' ')}: <strong>{val.toFixed(1)}</strong>
                                                             </span>
                                                         ))}
                                                     </div>
@@ -728,11 +727,11 @@ export default function Analysis({ initialSymbol, onSymbolConsumed, analysisCach
                                             </div>
                                             <div className="analyst-metric">
                                                 <div className="analyst-metric-label">Target</div>
-                                                <div className="analyst-metric-value" style={{ color: 'var(--text-accent)' }}>${result.analysts.priceTarget}</div>
+                                                <div className="analyst-metric-value" style={{ color: 'var(--text-accent)' }}>${Number(result.analysts.priceTarget).toFixed(2)}</div>
                                             </div>
                                             <div className="analyst-metric">
                                                 <div className="analyst-metric-label">Range</div>
-                                                <div className="analyst-metric-value" style={{ color: 'var(--text-secondary)', fontSize: 13 }}>${result.analysts.low}–${result.analysts.high}</div>
+                                                <div className="analyst-metric-value" style={{ color: 'var(--text-secondary)', fontSize: 13 }}>${Number(result.analysts.low).toFixed(2)}–${Number(result.analysts.high).toFixed(2)}</div>
                                             </div>
                                         </div>
                                         <div style={{ marginTop: 16 }}>
@@ -742,9 +741,9 @@ export default function Analysis({ initialSymbol, onSymbolConsumed, analysisCach
                                                 <div style={{ width: `${((result.analysts.priceTarget - result.analysts.low) / (result.analysts.high - result.analysts.low)) * 100}%`, height: '100%', background: 'linear-gradient(90deg, var(--green), #34d399)', borderRadius: 4 }} />
                                             </div>
                                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
-                                                <span>${result.analysts.low}</span>
-                                                <span style={{ color: 'var(--text-accent)' }}>Current: ${result.price}</span>
-                                                <span>${result.analysts.high}</span>
+                                                <span>${Number(result.analysts.low).toFixed(2)}</span>
+                                                <span style={{ color: 'var(--text-accent)' }}>Current: ${Number(result.price).toFixed(2)}</span>
+                                                <span>${Number(result.analysts.high).toFixed(2)}</span>
                                             </div>
                                         </div>
                                     </div>
@@ -833,27 +832,27 @@ export default function Analysis({ initialSymbol, onSymbolConsumed, analysisCach
                                         <div><span className="trade-rec-label">Strategy</span><div className="trade-rec-value">{result.recommendation.strategy}</div></div>
                                         <div>
                                             <span className="trade-rec-label">Short Strike</span>
-                                            <div className="trade-rec-value">${result.recommendation.shortStrike}</div>
+                                            <div className="trade-rec-value">${Number(result.recommendation.shortStrike).toFixed(2)}</div>
                                             <div className="trade-rec-delta">Δ {typeof result.recommendation.shortDelta === 'number' ? result.recommendation.shortDelta.toFixed(2) : result.recommendation.shortDelta}</div>
                                         </div>
                                         <div>
                                             <span className="trade-rec-label">Long Strike</span>
-                                            <div className="trade-rec-value">${result.recommendation.longStrike}</div>
+                                            <div className="trade-rec-value">${Number(result.recommendation.longStrike).toFixed(2)}</div>
                                             <div className="trade-rec-delta">Δ {typeof result.recommendation.longDelta === 'number' ? result.recommendation.longDelta.toFixed(2) : result.recommendation.longDelta}</div>
                                         </div>
                                         {result.recommendation.spreadWidth && (
-                                            <div><span className="trade-rec-label">Spread Width</span><div className="trade-rec-value">${result.recommendation.spreadWidth}</div></div>
+                                            <div><span className="trade-rec-label">Spread Width</span><div className="trade-rec-value">${Number(result.recommendation.spreadWidth).toFixed(2)}</div></div>
                                         )}
                                         <div><span className="trade-rec-label">DTE</span><div className="trade-rec-value">{result.recommendation.dte} days</div></div>
                                         <div><span className="trade-rec-label">Expiration</span><div className="trade-rec-value">{result.recommendation.expiration}</div></div>
-                                        <div><span className="trade-rec-label">Credit</span><div className="trade-rec-value" style={{ color: 'var(--green)' }}>{result.recommendation.creditEstimate}</div></div>
-                                        <div><span className="trade-rec-label">Max Risk</span><div className="trade-rec-value" style={{ color: 'var(--red)' }}>{result.recommendation.maxRisk}</div></div>
+                                        <div><span className="trade-rec-label">Credit</span><div className="trade-rec-value" style={{ color: result.recommendation.creditEstimate ? 'var(--green)' : 'var(--amber)' }}>{result.recommendation.creditEstimate ?? 'N/A'}</div></div>
+                                        <div><span className="trade-rec-label">Max Risk</span><div className="trade-rec-value" style={{ color: 'var(--red)' }}>{result.recommendation.maxRisk ?? 'N/A'}</div></div>
                                         {result.recommendation.maxProfit && (
                                             <div><span className="trade-rec-label">Max Profit</span><div className="trade-rec-value" style={{ color: 'var(--green)' }}>{result.recommendation.maxProfit}</div></div>
                                         )}
-                                        <div><span className="trade-rec-label">Return on Risk</span><div className="trade-rec-value" style={{ color: 'var(--green)' }}>{result.recommendation.returnOnRisk}</div></div>
+                                        <div><span className="trade-rec-label">Return on Risk</span><div className="trade-rec-value" style={{ color: result.recommendation.returnOnRisk ? 'var(--green)' : 'var(--amber)' }}>{result.recommendation.returnOnRisk ?? 'N/A'}</div></div>
                                         {result.recommendation.breakEven != null && (
-                                            <div><span className="trade-rec-label">Break Even</span><div className="trade-rec-value">${result.recommendation.breakEven}</div></div>
+                                            <div><span className="trade-rec-label">Break Even</span><div className="trade-rec-value">${Number(result.recommendation.breakEven).toFixed(2)}</div></div>
                                         )}
                                         {result.recommendation.probProfit != null && (
                                             <div><span className="trade-rec-label">Prob. Profit</span><div className="trade-rec-value" style={{ color: 'var(--green)' }}>{result.recommendation.probProfit.toFixed(0)}%</div></div>

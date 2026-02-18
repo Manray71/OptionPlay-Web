@@ -76,6 +76,7 @@ export default function Scanner({ onSymbolClick, scanResults, setScanResults, sc
         sector: '',
         strategy: '',
         signal: '',
+        quality: '',
     });
 
     const handleSort = useCallback((col) => {
@@ -112,13 +113,20 @@ export default function Scanner({ onSymbolClick, scanResults, setScanResults, sc
         if (filters.signal) {
             rows = rows.filter(r => r.signal === filters.signal);
         }
+        if (filters.quality) {
+            if (filters.quality === 'hasCredit') {
+                rows = rows.filter(r => r.credit != null && r.credit > 0);
+            } else {
+                rows = rows.filter(r => r.tradeQuality === filters.quality);
+            }
+        }
 
         // Apply sort
         if (sortCol && sortDir) {
             const dir = sortDir === 'asc' ? 1 : -1;
             rows.sort((a, b) => {
-                const av = a[sortCol], bv = b[sortCol];
-                if (typeof av === 'number') return (av - bv) * dir;
+                const av = a[sortCol] ?? -Infinity, bv = b[sortCol] ?? -Infinity;
+                if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir;
                 return String(av).localeCompare(String(bv)) * dir;
             });
         }
@@ -184,7 +192,7 @@ export default function Scanner({ onSymbolClick, scanResults, setScanResults, sc
     }, [toast]);
 
     const today = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-    const hasActiveFilters = filters.symbol || filters.sector || filters.strategy || filters.signal;
+    const hasActiveFilters = filters.symbol || filters.sector || filters.strategy || filters.signal || filters.quality;
     const totalCount = results ? results.length : 0;
     const shownCount = processedResults ? processedResults.length : 0;
 
@@ -299,6 +307,7 @@ export default function Scanner({ onSymbolClick, scanResults, setScanResults, sc
                                             <SortableHeader label="Earnings" column="earningsDays" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
                                             <SortableHeader label="Stability" column="stability" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
                                             <SortableHeader label="Win Rate" column="winRate" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                                            <SortableHeader label="Credit" column="credit" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
                                             <SortableHeader label="Sector" column="sector" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
                                             <th></th>
                                         </tr>
@@ -327,6 +336,14 @@ export default function Scanner({ onSymbolClick, scanResults, setScanResults, sc
                                             <td></td>
                                             <td></td>
                                             <td></td>
+                                            <td>
+                                                <select className="table-filter-input" value={filters.quality} onChange={e => handleFilterChange('quality', e.target.value)}>
+                                                    <option value="">All</option>
+                                                    <option value="good">Good</option>
+                                                    <option value="acceptable">Acceptable</option>
+                                                    <option value="hasCredit">Has Credit</option>
+                                                </select>
+                                            </td>
                                             <td><input className="table-filter-input" placeholder="Sector..." value={filters.sector} onChange={e => handleFilterChange('sector', e.target.value)} /></td>
                                             <td></td>
                                         </tr>
@@ -362,6 +379,15 @@ export default function Scanner({ onSymbolClick, scanResults, setScanResults, sc
                                                     </div>
                                                 </td>
                                                 <td style={{ color: r.winRate >= 90 ? 'var(--green)' : 'var(--text-secondary)' }}>{r.winRate}%</td>
+                                                <td>
+                                                    {r.credit != null && r.credit > 0 ? (
+                                                        <span style={{ color: r.tradeQuality === 'poor' ? 'var(--amber)' : 'var(--green)', fontWeight: 600, fontSize: 13 }}>${r.credit.toFixed(2)}</span>
+                                                    ) : r.tradeQuality != null ? (
+                                                        <span style={{ fontSize: 11, color: 'var(--amber)' }} title="Low OI — no liquid strikes">N/A</span>
+                                                    ) : (
+                                                        <div className="spinner" style={{ width: 10, height: 10, borderWidth: 1.5 }} />
+                                                    )}
+                                                </td>
                                                 <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{r.sector}</td>
                                                 <td><ExternalLink size={14} style={{ color: 'var(--text-muted)', opacity: 0.5 }} /></td>
                                             </tr>
