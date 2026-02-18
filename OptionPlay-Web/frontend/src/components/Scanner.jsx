@@ -148,6 +148,7 @@ export default function Scanner({ onSymbolClick, scanResults, setScanResults, sc
         setToast(null);
         setDemoMode(false);
         setPrefetchProgress(null);
+        setFilters({ symbol: '', sector: '', strategy: '', signal: '', quality: '' });
         const t0 = performance.now();
         try {
             const data = await runScanJson({
