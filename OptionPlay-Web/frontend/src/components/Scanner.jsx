@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { Play, Filter, ExternalLink, ChevronUp, ChevronDown, Search, Info } from 'lucide-react';
-import { runScanJson, fetchAnalysisJson } from '../api';
+import { runScanJson } from '../api';
 
 const STRATEGIES = [
     { id: 'multi', label: 'Multi-Strategy', desc: 'Best signal per symbol' },
@@ -55,7 +55,7 @@ function ScoreBar({ score, max = 10 }) {
     );
 }
 
-export default function Scanner({ onSymbolClick, scanResults, setScanResults, scanTime, setScanTime, analysisCache }) {
+export default function Scanner({ onSymbolClick, scanResults, setScanResults, scanTime, setScanTime, analysisCache, prefetchAnalyses, prefetchProgress, setPrefetchProgress }) {
     const [selectedStrategy, setSelectedStrategy] = useState('multi');
     const [minScore, setMinScore] = useState(3.5);
     const [listType, setListType] = useState('stable');
@@ -127,39 +127,6 @@ export default function Scanner({ onSymbolClick, scanResults, setScanResults, sc
     }, [results, filters, sortCol, sortDir]);
 
     const [demoMode, setDemoMode] = useState(false);
-
-    // Pre-fetch progress
-    const [prefetchProgress, setPrefetchProgress] = useState(null); // { done, total }
-
-    const prefetchAnalyses = useCallback((symbols) => {
-        if (!analysisCache || !symbols.length) return;
-        const cache = analysisCache.current;
-        const toFetch = symbols.filter(s => !cache[s]);
-        if (!toFetch.length) {
-            setPrefetchProgress({ done: symbols.length, total: symbols.length });
-            return;
-        }
-        let done = symbols.length - toFetch.length;
-        const total = symbols.length;
-        setPrefetchProgress({ done, total });
-
-        // Fetch 3 at a time to avoid overwhelming the backend
-        const queue = [...toFetch];
-        const CONCURRENCY = 3;
-        const next = () => {
-            const sym = queue.shift();
-            if (!sym) return Promise.resolve();
-            return fetchAnalysisJson(sym)
-                .then(data => { if (!data.error) cache[sym] = data; })
-                .catch(() => {})
-                .finally(() => {
-                    done++;
-                    setPrefetchProgress({ done, total });
-                    return next();
-                });
-        };
-        Promise.all(Array.from({ length: CONCURRENCY }, () => next()));
-    }, [analysisCache]);
 
     const handleScan = async () => {
         setIsScanning(true);
@@ -291,7 +258,7 @@ export default function Scanner({ onSymbolClick, scanResults, setScanResults, sc
                                 ? '0 candidates'
                                 : <>
                                     {hasActiveFilters ? `${shownCount} of ${totalCount}` : totalCount} candidates
-                                    {scanTime && <> &middot; {scanTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</>}
+                                    {scanTime && <> &middot; {scanTime.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} {scanTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</>}
                                 </>}
                             {prefetchProgress && prefetchProgress.done < prefetchProgress.total && (
                                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--text-muted)' }}>

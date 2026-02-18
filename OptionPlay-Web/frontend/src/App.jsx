@@ -12,6 +12,7 @@ import Scanner from './components/Scanner';
 import Analysis from './components/Analysis';
 import Portfolio from './components/Portfolio';
 import Admin from './components/Admin';
+import { fetchAnalysisJson } from './api';
 
 const NAV_ITEMS = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -32,6 +33,37 @@ function App() {
     // Analysis cache — pre-fetched after scan completes
     const analysisCacheRef = useRef({});
 
+    // Prefetch progress — lifted to App so it survives Scanner unmount
+    const [prefetchProgress, setPrefetchProgress] = useState(null);
+
+    const prefetchAnalyses = useCallback((symbols) => {
+        const cache = analysisCacheRef.current;
+        const toFetch = symbols.filter(s => !cache[s]);
+        if (!toFetch.length) {
+            setPrefetchProgress({ done: symbols.length, total: symbols.length });
+            return;
+        }
+        let done = symbols.length - toFetch.length;
+        const total = symbols.length;
+        setPrefetchProgress({ done, total });
+
+        const queue = [...toFetch];
+        const CONCURRENCY = 3;
+        const next = () => {
+            const sym = queue.shift();
+            if (!sym) return Promise.resolve();
+            return fetchAnalysisJson(sym)
+                .then(data => { if (!data.error) cache[sym] = data; })
+                .catch(() => {})
+                .finally(() => {
+                    done++;
+                    setPrefetchProgress({ done, total });
+                    return next();
+                });
+        };
+        Promise.all(Array.from({ length: CONCURRENCY }, () => next()));
+    }, []);
+
     // Navigate to analysis with a pre-selected symbol
     const navigateToAnalysis = useCallback((symbol) => {
         setAnalysisSymbol(symbol);
@@ -41,7 +73,7 @@ function App() {
     const renderPage = () => {
         switch (activePage) {
             case 'dashboard': return <Dashboard onSymbolClick={navigateToAnalysis} />;
-            case 'scanner': return <Scanner onSymbolClick={navigateToAnalysis} scanResults={scanResults} setScanResults={setScanResults} scanTime={scanTime} setScanTime={setScanTime} analysisCache={analysisCacheRef} />;
+            case 'scanner': return <Scanner onSymbolClick={navigateToAnalysis} scanResults={scanResults} setScanResults={setScanResults} scanTime={scanTime} setScanTime={setScanTime} analysisCache={analysisCacheRef} prefetchAnalyses={prefetchAnalyses} prefetchProgress={prefetchProgress} setPrefetchProgress={setPrefetchProgress} />;
             case 'analysis': return <Analysis initialSymbol={analysisSymbol} onSymbolConsumed={() => setAnalysisSymbol('')} analysisCache={analysisCacheRef} />;
             case 'portfolio': return <Portfolio />;
             case 'admin': return <Admin />;
