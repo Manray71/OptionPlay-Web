@@ -327,11 +327,9 @@ export default function Scanner({ onSymbolClick, scanResults, setScanResults, sc
                                             <td>
                                                 <select className="table-filter-input" value={filters.strategy} onChange={e => handleFilterChange('strategy', e.target.value)}>
                                                     <option value="">All</option>
-                                                    <option>Pullback</option>
-                                                    <option>Bounce</option>
-                                                    <option>Breakout</option>
-                                                    <option>Trend Continuation</option>
-                                                    <option>Earnings Dip</option>
+                                                    {[...new Set((results || []).map(r => r.strategy))].sort().map(s => (
+                                                        <option key={s} value={s}>{s}</option>
+                                                    ))}
                                                 </select>
                                             </td>
                                             <td></td>
