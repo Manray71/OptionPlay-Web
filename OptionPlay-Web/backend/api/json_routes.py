@@ -564,7 +564,36 @@ async def analyze_symbol(symbol: str):
             return _error(f"No historical data for {symbol}")
 
         prices, volumes, highs, lows = historical[0], historical[1], historical[2], historical[3]
-        signals = scanner.analyze_symbol(symbol, prices, volumes, highs, lows)
+        opens = historical[4] if len(historical) > 4 else None
+
+        # Pre-compute market context from SPY (same as scan_async does)
+        market_context_score = None
+        market_context_trend = None
+        try:
+            spy_data = await scan_handler._fetch_historical_cached("SPY", days=260)
+            if spy_data and len(spy_data[0]) >= 50:
+                from src.analyzers.feature_scoring_mixin import FeatureScoringMixin
+                _scorer = FeatureScoringMixin()
+                mc = _scorer._score_market_context(spy_data[0])
+                market_context_score = mc[0]
+                market_context_trend = mc[1]
+        except Exception:
+            pass
+
+        # Build context with market data so analyzers see SPY trend
+        from src.analyzers.context import AnalysisContext
+        context = AnalysisContext.from_data(
+            symbol, prices, volumes, highs, lows,
+            opens=opens,
+        )
+        if market_context_score is not None:
+            context.market_context_score = market_context_score
+            context.market_context_trend = market_context_trend
+
+        signals = scanner.analyze_symbol(
+            symbol, prices, volumes, highs, lows,
+            opens=opens, context=context,
+        )
         strategies = [s.to_dict() for s in signals]
 
         # Get IV data
