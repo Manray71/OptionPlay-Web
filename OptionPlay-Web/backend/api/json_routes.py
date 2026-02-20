@@ -817,6 +817,25 @@ async def analyze_symbol(symbol: str):
             except Exception:
                 pass
 
+        # Fetch next earnings date from DB
+        earnings_date = None
+        days_to_earnings = None
+        try:
+            import sqlite3 as _sql
+            from datetime import date as _date
+            _db = os.path.expanduser("~/.optionplay/trades.db")
+            _conn = _sql.connect(_db)
+            row = _conn.execute(
+                "SELECT MIN(earnings_date) FROM earnings_history WHERE symbol = ? AND earnings_date >= date('now')",
+                (symbol,),
+            ).fetchone()
+            _conn.close()
+            if row and row[0]:
+                earnings_date = row[0]
+                days_to_earnings = (_date.fromisoformat(row[0]) - _date.today()).days
+        except Exception:
+            pass
+
         return {
             "symbol": symbol,
             "price": price,
@@ -826,6 +845,8 @@ async def analyze_symbol(symbol: str):
             "recommendation": recommendation,
             "news": news_data,
             "analysts": analysts_data,
+            "earnings_date": earnings_date,
+            "days_to_earnings": days_to_earnings,
         }
     except Exception as e:
         return _error(str(e))

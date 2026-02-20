@@ -152,7 +152,8 @@ function mapApiAnalysis(data, sym) {
         iv30d: mock.iv30d,
         iv1y: mock.iv1y,
         hvCurrent: iv.hv_20 ?? mock.hvCurrent,
-        earningsDays: mock.earningsDays,
+        earningsDate: data.earnings_date ?? null,
+        earningsDays: data.days_to_earnings ?? mock.earningsDays,
         strategies: strategies.length > 0 ? strategies : mock.strategies,
         levels: data.levels && (data.levels.supports?.length || data.levels.resistances?.length)
             ? data.levels
