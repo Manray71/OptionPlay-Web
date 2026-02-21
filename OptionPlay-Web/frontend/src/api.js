@@ -74,6 +74,32 @@ export async function fetchPortfolioSummary() {
     return res.json();
 }
 
+// ── Dashboard Market Overview API ──
+
+export async function fetchEventsJson(days = 30) {
+    const res = await fetch(`${API_BASE}/json/events?days=${days}`);
+    if (!res.ok) throw new Error('Failed to fetch events');
+    return res.json();
+}
+
+export async function fetchSectorsJson() {
+    const res = await fetch(`${API_BASE}/json/sectors`);
+    if (!res.ok) throw new Error('Failed to fetch sectors');
+    return res.json();
+}
+
+export async function fetchEarningsCalendarJson(count = 5) {
+    const res = await fetch(`${API_BASE}/json/earnings-calendar?count=${count}`);
+    if (!res.ok) throw new Error('Failed to fetch earnings calendar');
+    return res.json();
+}
+
+export async function fetchMarketNewsJson(count = 5) {
+    const res = await fetch(`${API_BASE}/json/market-news?count=${count}`);
+    if (!res.ok) throw new Error('Failed to fetch market news');
+    return res.json();
+}
+
 // Admin API
 export async function fetchConfigFiles() {
     const res = await fetch(`${API_BASE}/admin/files`);

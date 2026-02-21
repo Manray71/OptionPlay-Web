@@ -741,278 +741,204 @@ body {
   color: var(--text-accent) !important;
 }
 
-/* ============ HORIZONTAL S/R BAR ============ */
+/* ============ VERTICAL S/R LAYOUT ============ */
 
-.sr-hbar-wrap {
-  position: relative;
-  padding: 0 8px;
-}
-
-/* ── Labels above the bar (resistance) ── */
-.sr-labels-top {
-  position: relative;
-  height: 90px;
-  margin-bottom: 4px;
-}
-
-/* ── Labels below the bar (support) ── */
-.sr-labels-bottom {
-  position: relative;
-  height: 90px;
-  margin-top: 4px;
-}
-
-/* ── Individual marker label ── */
-.sr-marker-label {
-  position: absolute;
-  transform: translateX(-50%);
+.sr-vertical-wrap {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  z-index: 3;
-}
-
-.sr-marker-label.resistance {
-  bottom: 0;
-}
-
-.sr-marker-label.support {
-  top: 0;
-}
-
-/* Connector line from label to bar */
-.sr-marker-connector {
-  width: 1px;
-  height: 8px;
-}
-
-.sr-marker-connector.resistance {
-  background: rgba(239, 68, 68, 0.4);
-  order: 2;
-}
-
-.sr-marker-connector.support {
-  background: rgba(16, 185, 129, 0.4);
-  order: -1;
-}
-
-/* Card attached to each marker */
-.sr-marker-card {
-  padding: 6px 10px;
-  border-radius: var(--radius-xs);
-  font-size: 11px;
-  text-align: center;
-  white-space: nowrap;
-  transition: all var(--transition-fast);
-  min-width: 80px;
-}
-
-.sr-marker-card.resistance {
-  background: rgba(239, 68, 68, 0.06);
-  border: 1px solid rgba(239, 68, 68, 0.2);
-  order: 1;
-}
-
-.sr-marker-card.support {
-  background: rgba(16, 185, 129, 0.06);
-  border: 1px solid rgba(16, 185, 129, 0.2);
-  order: 1;
-}
-
-.sr-marker-label:hover .sr-marker-card {
-  transform: scale(1.04);
-}
-
-.sr-marker-badge {
-  font-weight: 800;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 3px;
-}
-
-.sr-marker-badge.resistance {
-  color: var(--red);
-}
-
-.sr-marker-badge.support {
-  color: var(--green);
-}
-
-.sr-marker-info {
-  display: flex;
-  align-items: center;
-  justify-content: center;
   gap: 6px;
-  margin-bottom: 3px;
 }
 
-.sr-marker-price {
-  font-weight: 700;
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
-  font-size: 12px;
-  color: var(--text-primary);
+/* ── Mini position bar (compact overview) ── */
+.sr-minibar {
+  margin-bottom: 8px;
 }
 
-.sr-marker-pct {
-  font-weight: 700;
-  font-size: 10px;
-  padding: 1px 6px;
-  border-radius: 8px;
-}
-
-.sr-marker-pct.resistance {
-  background: var(--red-glow);
-  color: var(--red);
-}
-
-.sr-marker-pct.support {
-  background: var(--green-glow);
-  color: var(--green);
-}
-
-.sr-marker-meta {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-}
-
-.sr-marker-type {
-  font-size: 10px;
-  color: var(--text-muted);
-}
-
-.sr-marker-strength-wrap {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.sr-mini-bar {
-  width: 30px;
-  height: 3px;
-  background: rgba(71, 85, 105, 0.3);
-  border-radius: 2px;
-  overflow: hidden;
-}
-
-.sr-mini-fill {
-  height: 100%;
-  border-radius: 2px;
-}
-
-.sr-mini-fill.resistance {
-  background: var(--red);
-}
-
-.sr-mini-fill.support {
-  background: var(--green);
-}
-
-.sr-mini-val {
-  font-size: 9px;
-  font-weight: 600;
-  color: var(--text-muted);
-}
-
-/* ── The main horizontal bar ── */
-.sr-hbar {
+.sr-minibar-track {
   position: relative;
-  height: 20px;
-  border-radius: 10px;
+  display: flex;
+  height: 10px;
+  border-radius: 5px;
   overflow: visible;
 }
 
-.sr-hbar-track {
-  display: flex;
-  width: 100%;
-  height: 100%;
-  border-radius: 10px;
-  overflow: hidden;
-}
-
-.sr-hbar-zone.support {
+.sr-minibar-zone.support {
   background: linear-gradient(90deg, rgba(16, 185, 129, 0.08), rgba(16, 185, 129, 0.25));
-  border-right: none;
+  border-radius: 5px 0 0 5px;
 }
 
-.sr-hbar-zone.resistance {
+.sr-minibar-zone.resistance {
   background: linear-gradient(90deg, rgba(239, 68, 68, 0.25), rgba(239, 68, 68, 0.08));
+  border-radius: 0 5px 5px 0;
 }
 
-/* Tick marks on the bar */
-.sr-tick {
+.sr-minibar-tick {
   position: absolute;
-  top: 50%;
-  transform: translate(-50%, -50%);
+  top: 0;
+  width: 2px;
+  height: 100%;
+  transform: translateX(-50%);
+}
+
+.sr-minibar-tick.resistance { background: rgba(239, 68, 68, 0.5); }
+.sr-minibar-tick.support    { background: rgba(16, 185, 129, 0.5); }
+
+.sr-minibar-needle {
+  position: absolute;
+  top: -3px;
+  width: 8px;
+  height: 16px;
+  transform: translateX(-50%);
+  background: linear-gradient(135deg, var(--indigo), var(--cyan));
+  border-radius: 3px;
+  box-shadow: 0 0 8px var(--indigo-glow);
   z-index: 2;
 }
 
-.sr-tick-line {
-  border-radius: 1px;
-}
-
-.sr-tick.resistance .sr-tick-line {
-  background: var(--red);
-  width: 3px;
-}
-
-.sr-tick.support .sr-tick-line {
-  background: var(--green);
-  width: 3px;
-}
-
-/* Current price needle */
-.sr-current-needle {
-  position: absolute;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  z-index: 10;
-}
-
-.sr-needle-diamond {
-  width: 14px;
-  height: 14px;
-  background: linear-gradient(135deg, var(--indigo), var(--cyan));
-  transform: rotate(45deg);
-  border-radius: 2px;
-  box-shadow: 0 0 12px var(--indigo-glow), 0 0 24px rgba(99, 102, 241, 0.2);
-}
-
-.sr-needle-line {
-  width: 2px;
-  height: 12px;
-  background: var(--text-accent);
-  margin-top: 2px;
-}
-
-.sr-needle-label {
-  font-weight: 800;
-  font-size: 13px;
-  color: var(--text-accent);
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
-  margin-top: 2px;
-  background: var(--indigo-glow);
-  padding: 2px 10px;
-  border-radius: 10px;
-  border: 1px solid var(--border-accent);
-  white-space: nowrap;
-}
-
-/* Price axis labels */
-.sr-price-axis {
+.sr-minibar-labels {
   display: flex;
   justify-content: space-between;
-  margin-top: 6px;
-  padding: 0 2px;
+  margin-top: 4px;
   font-size: 10px;
   color: var(--text-muted);
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   opacity: 0.5;
+}
+
+/* ── Level group ── */
+.sr-level-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* ── Individual level row ── */
+.sr-level-row {
+  display: grid;
+  grid-template-columns: 32px 90px 52px 1fr 38px 30px minmax(60px, auto);
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: var(--radius-xs);
+  transition: background var(--transition-fast);
+}
+
+.sr-level-row.resistance {
+  background: rgba(239, 68, 68, 0.04);
+  border-left: 2px solid rgba(239, 68, 68, 0.3);
+}
+
+.sr-level-row.support {
+  background: rgba(16, 185, 129, 0.04);
+  border-left: 2px solid rgba(16, 185, 129, 0.3);
+}
+
+.sr-level-row:hover {
+  background: rgba(148, 163, 184, 0.06);
+}
+
+/* Badge (R1, S1 etc.) */
+.sr-level-badge {
+  font-weight: 800;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.sr-level-badge.resistance { color: var(--red); }
+.sr-level-badge.support    { color: var(--green); }
+
+/* Price */
+.sr-level-price {
+  font-weight: 700;
+  font-size: 13px;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  color: var(--text-primary);
+}
+
+/* Distance % */
+.sr-level-dist {
+  font-weight: 700;
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.sr-level-dist.resistance {
+  background: var(--red-glow);
+  color: var(--red);
+}
+
+.sr-level-dist.support {
+  background: var(--green-glow);
+  color: var(--green);
+}
+
+/* Strength bar */
+.sr-level-strength {
+  height: 5px;
+  background: rgba(71, 85, 105, 0.15);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.sr-level-strength-bar {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.sr-level-strength-bar.resistance { background: var(--red); opacity: 0.7; }
+.sr-level-strength-bar.support    { background: var(--green); opacity: 0.7; }
+
+/* Meta columns */
+.sr-level-meta {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-align: right;
+}
+
+.sr-level-touches {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.sr-level-type {
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Current price divider ── */
+.sr-current-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0;
+}
+
+.sr-current-line {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--border-accent), transparent);
+}
+
+.sr-current-tag {
+  font-weight: 800;
+  font-size: 14px;
+  color: var(--text-accent);
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  background: var(--indigo-glow);
+  padding: 3px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border-accent);
+  white-space: nowrap;
 }
 
 /* ============ NEWS CARDS ============ */
@@ -1074,6 +1000,31 @@ body {
   align-items: center;
   gap: 10px;
   font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* ── Dashboard news card links ── */
+.news-card-link {
+  text-decoration: none;
+  color: inherit;
+  display: block;
+}
+
+.news-card {
+  padding: 10px 12px;
+  background: var(--bg-input);
+  border-radius: var(--radius-xs);
+  border: 1px solid rgba(71, 85, 105, 0.2);
+  transition: all var(--transition-fast);
+}
+
+.news-card:hover {
+  border-color: var(--border-accent);
+  background: rgba(99, 102, 241, 0.04);
+}
+
+.badge-muted {
+  background: rgba(71, 85, 105, 0.15);
   color: var(--text-muted);
 }
 
@@ -1444,6 +1395,151 @@ body {
 
 .strategy-component-chip strong {
   color: var(--text-primary);
+}
+
+/* Momentum Indicators */
+.momentum-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.momentum-indicator {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.momentum-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.momentum-value-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.momentum-value {
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.momentum-bar-track {
+  position: relative;
+  height: 6px;
+  background: var(--bg-input);
+  border-radius: 3px;
+  overflow: visible;
+}
+
+.momentum-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+
+.momentum-bar-marker {
+  position: absolute;
+  top: -2px;
+  width: 1px;
+  height: 10px;
+  background: var(--text-muted);
+  opacity: 0.4;
+}
+
+.momentum-sma-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sma-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 6px 12px;
+  background: var(--bg-input);
+  border-radius: 6px;
+  min-width: 80px;
+}
+
+.sma-chip-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.sma-chip-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Falling Knife Alert */
+.falling-knife-alert {
+  border-radius: 8px;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.falling-knife-warning {
+  background: rgba(251, 191, 36, 0.08);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+.falling-knife-severe {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+.falling-knife-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.falling-knife-icon {
+  font-size: 16px;
+}
+
+.falling-knife-title {
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.falling-knife-warning .falling-knife-title {
+  color: var(--amber);
+}
+
+.falling-knife-severe .falling-knife-title {
+  color: var(--red);
+}
+
+.falling-knife-triggers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.falling-knife-trigger {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-secondary);
+}
+
+.falling-knife-severe .falling-knife-trigger {
+  background: rgba(239, 68, 68, 0.08);
 }
 
 /* Trade Recommendation */

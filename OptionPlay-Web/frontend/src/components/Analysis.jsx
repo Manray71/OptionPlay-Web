@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Search, BarChart3, Zap, Newspaper, Users, Target, Activity, ChevronDown, Info } from 'lucide-react';
+import { Search, BarChart3, Zap, Newspaper, Users, Target, Activity, ChevronDown, Info, TrendingUp } from 'lucide-react';
 import { fetchAnalysisJson } from '../api';
 
 // ──────────────────────────────────────────────────────────
@@ -87,7 +87,8 @@ function generateMockAnalysis(sym) {
 function mapApiAnalysis(data, sym) {
     const mock = generateMockAnalysis(sym);
 
-    const strategies = (data.strategies || []).map(s => {
+    const rawStrategies = data.strategies || [];
+    const strategies = rawStrategies.map(s => {
         const strength = s.strength || '';
         const signal = strength.charAt(0).toUpperCase() + strength.slice(1).toLowerCase();
         const breakdown = s.details?.score_breakdown?.components || {};
@@ -103,6 +104,52 @@ function mapApiAnalysis(data, sym) {
             components,
         };
     });
+
+    // Extract momentum indicators — merge across all strategies to get the richest data
+    const allBreakdowns = rawStrategies.map(s => s.details?.score_breakdown?.components || {});
+    const pick = (key, subKey) => {
+        for (const bd of allBreakdowns) {
+            const v = bd[key]?.[subKey];
+            if (v != null) return v;
+        }
+        return null;
+    };
+    const bestStrat = rawStrategies.length > 0
+        ? rawStrategies.reduce((best, s) => (s.score ?? 0) > (best.score ?? 0) ? s : best, rawStrategies[0])
+        : null;
+    const bestBd = bestStrat?.details?.score_breakdown?.components || {};
+    const momentum = {
+        rsi: pick('rsi', 'value') ?? pick('momentum_health', 'rsi'),
+        rsiDivergence: pick('rsi_divergence', 'type'),
+        rsiDivergenceStrength: pick('rsi_divergence', 'strength'),
+        // Trend status: trend_continuation uses sma_alignment, pullback uses trend/trend_strength
+        trendStatus: bestBd.trend?.status ?? pick('trend', 'status'),
+        trendScore: bestBd.trend?.score ?? pick('sma_alignment', 'score'),
+        // SMA data: trend_continuation has raw values, pullback has vs_sma20/vs_sma200
+        sma20: pick('sma_alignment', 'sma_20'),
+        sma50: pick('sma_alignment', 'sma_50'),
+        sma200: pick('sma_alignment', 'sma_200'),
+        smaAllRising: pick('sma_alignment', 'all_rising'),
+        // Pullback-style SMA position (above/below)
+        vsSma20: pick('moving_averages', 'vs_sma20'),
+        vsSma200: pick('moving_averages', 'vs_sma200'),
+        smaReason: pick('moving_averages', 'reason') ?? pick('trend_strength', 'reason'),
+        trendAlignment: pick('trend_strength', 'alignment'),
+        sma20Slope: pick('trend_strength', 'sma20_slope'),
+        // Momentum health (trend_continuation)
+        momentumScore: pick('momentum_health', 'score'),
+        adx: pick('momentum_health', 'adx'),
+        macdBullish: pick('momentum_health', 'macd_bullish') ?? (pick('macd', 'signal') === 'bullish'),
+        // MACD from pullback/bounce
+        macdSignal: pick('macd', 'signal'),
+        macdHistogram: pick('macd', 'histogram'),
+        // Stochastic
+        stochSignal: pick('stochastic', 'signal'),
+        stochK: pick('stochastic', 'k'),
+        stochD: pick('stochastic', 'd'),
+        // Market context
+        marketTrend: bestStrat?.details?.score_breakdown?.market_context?.trend ?? pick('market_context', 'spy_trend'),
+    };
 
     const iv = data.iv || {};
     const rec = data.recommendation || {};
@@ -182,6 +229,8 @@ function mapApiAnalysis(data, sym) {
             : mock.analysts,
         _newsLive: !!data.news?.length,
         _analystsLive: !!(data.analysts && (data.analysts.total_ratings > 0 || data.analysts.target_median)),
+        momentum,
+        fallingKnife: data.falling_knife ?? null,
         recommendation,
         _liveData: strategies.length > 0,
     };
@@ -245,7 +294,7 @@ function IVPercentileGauge({ percentile, rank, ivCurrent, iv30d, _iv1y, hvCurren
 
 
 // ──────────────────────────────────────────────────────────
-// Horizontal Support & Resistance Bar
+// Support & Resistance – Vertical List Layout
 // ──────────────────────────────────────────────────────────
 
 function SRChart({ price, levels }) {
@@ -257,105 +306,95 @@ function SRChart({ price, levels }) {
     const minPrice = Math.min(...allPrices) * 0.97;
     const maxPrice = Math.max(...allPrices) * 1.03;
     const range = maxPrice - minPrice;
-
     const priceToX = (p) => ((p - minPrice) / range) * 100;
     const currentX = priceToX(price);
 
-    const resistancesSorted = [...levels.resistances].sort((a, b) => a.price - b.price);
+    // Resistances: highest first (furthest away on top)
+    const resistancesSorted = [...levels.resistances].sort((a, b) => b.price - a.price);
+    // Supports: highest first (closest to current price on top)
     const supportsSorted = [...levels.supports].sort((a, b) => b.price - a.price);
 
+    const maxStrength = Math.max(
+        ...levels.resistances.map(l => l.strength || 0),
+        ...levels.supports.map(l => l.strength || 0),
+        1,
+    );
+
     return (
-        <div className="sr-hbar-wrap">
-            <div className="sr-labels-top">
-                {resistancesSorted.map((lvl, i) => {
-                    const x = priceToX(lvl.price);
-                    const dist = ((lvl.price - price) / price * 100).toFixed(1);
-                    return (
-                        <div key={`r${i}`} className="sr-marker-label resistance" style={{ left: `${x}%` }}>
-                            <div className="sr-marker-connector resistance" />
-                            <div className="sr-marker-card resistance">
-                                <div className="sr-marker-badge resistance">R{levels.resistances.indexOf(lvl) + 1}</div>
-                                <div className="sr-marker-info">
-                                    <span className="sr-marker-price">${lvl.price}</span>
-                                    <span className="sr-marker-pct resistance">+{dist}%</span>
-                                </div>
-                                <div className="sr-marker-meta">
-                                    <span className="sr-marker-type">{lvl.type}{lvl.fib ? ` · Fib ${lvl.fib}` : ''}</span>
-                                    <div className="sr-marker-strength-wrap">
-                                        <div className="sr-mini-bar"><div className="sr-mini-fill resistance" style={{ width: `${lvl.strength}%` }} /></div>
-                                        <span className="sr-mini-val">{lvl.touches}x · {lvl.strength}%</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    );
-                })}
-            </div>
-
-            <div className="sr-hbar">
-                <div className="sr-hbar-track">
-                    <div className="sr-hbar-zone support" style={{ width: `${currentX}%` }} />
-                    <div className="sr-hbar-zone resistance" style={{ width: `${100 - currentX}%` }} />
+        <div className="sr-vertical-wrap">
+            {/* ── Mini position bar ── */}
+            <div className="sr-minibar">
+                <div className="sr-minibar-track">
+                    <div className="sr-minibar-zone support" style={{ width: `${currentX}%` }} />
+                    <div className="sr-minibar-zone resistance" style={{ width: `${100 - currentX}%` }} />
+                    {levels.resistances.map((lvl, i) => (
+                        <div key={`rt${i}`} className="sr-minibar-tick resistance" style={{ left: `${priceToX(lvl.price)}%` }} />
+                    ))}
+                    {levels.supports.map((lvl, i) => (
+                        <div key={`st${i}`} className="sr-minibar-tick support" style={{ left: `${priceToX(lvl.price)}%` }} />
+                    ))}
+                    <div className="sr-minibar-needle" style={{ left: `${currentX}%` }} />
                 </div>
-
-                {levels.resistances.map((lvl, i) => {
-                    const x = priceToX(lvl.price);
-                    return (
-                        <div key={`rt${i}`} className="sr-tick resistance" style={{ left: `${x}%` }}>
-                            <div className="sr-tick-line" style={{ height: 6 + (lvl.strength / 100) * 18, opacity: 0.4 + (lvl.strength / 100) * 0.6 }} />
-                        </div>
-                    );
-                })}
-
-                {levels.supports.map((lvl, i) => {
-                    const x = priceToX(lvl.price);
-                    return (
-                        <div key={`st${i}`} className="sr-tick support" style={{ left: `${x}%` }}>
-                            <div className="sr-tick-line" style={{ height: 6 + (lvl.strength / 100) * 18, opacity: 0.4 + (lvl.strength / 100) * 0.6 }} />
-                        </div>
-                    );
-                })}
-
-                <div className="sr-current-needle" style={{ left: `${currentX}%` }}>
-                    <div className="sr-needle-diamond" />
-                    <div className="sr-needle-line" />
-                    <div className="sr-needle-label">${price}</div>
+                <div className="sr-minibar-labels">
+                    <span>${minPrice.toFixed(0)}</span>
+                    <span>${maxPrice.toFixed(0)}</span>
                 </div>
             </div>
 
-            <div className="sr-labels-bottom">
-                {supportsSorted.map((lvl, i) => {
-                    const x = priceToX(lvl.price);
-                    const dist = ((price - lvl.price) / price * 100).toFixed(1);
-                    return (
-                        <div key={`s${i}`} className="sr-marker-label support" style={{ left: `${x}%` }}>
-                            <div className="sr-marker-connector support" />
-                            <div className="sr-marker-card support">
-                                <div className="sr-marker-badge support">S{levels.supports.indexOf(lvl) + 1}</div>
-                                <div className="sr-marker-info">
-                                    <span className="sr-marker-price">${lvl.price}</span>
-                                    <span className="sr-marker-pct support">−{dist}%</span>
+            {/* ── Resistance rows ── */}
+            {resistancesSorted.length > 0 && (
+                <div className="sr-level-group">
+                    {resistancesSorted.map((lvl, i) => {
+                        const origIdx = levels.resistances.indexOf(lvl) + 1;
+                        const dist = ((lvl.price - price) / price * 100).toFixed(1);
+                        const barW = ((lvl.strength || 0) / maxStrength) * 100;
+                        return (
+                            <div key={`r${i}`} className="sr-level-row resistance">
+                                <span className="sr-level-badge resistance">R{origIdx}</span>
+                                <span className="sr-level-price">${lvl.price.toFixed(2)}</span>
+                                <span className="sr-level-dist resistance">+{dist}%</span>
+                                <div className="sr-level-strength">
+                                    <div className="sr-level-strength-bar resistance" style={{ width: `${barW}%` }} />
                                 </div>
-                                <div className="sr-marker-meta">
-                                    <span className="sr-marker-type">{lvl.type}{lvl.fib ? ` · Fib ${lvl.fib}` : ''}</span>
-                                    <div className="sr-marker-strength-wrap">
-                                        <div className="sr-mini-bar"><div className="sr-mini-fill support" style={{ width: `${lvl.strength}%` }} /></div>
-                                        <span className="sr-mini-val">{lvl.touches}x · {lvl.strength}%</span>
-                                    </div>
-                                </div>
+                                <span className="sr-level-meta">{lvl.strength}%</span>
+                                <span className="sr-level-touches">{lvl.touches}x</span>
+                                <span className="sr-level-type">{lvl.type}{lvl.fib ? ` · ${lvl.fib}` : ''}</span>
                             </div>
-                        </div>
-                    );
-                })}
+                        );
+                    })}
+                </div>
+            )}
+
+            {/* ── Current price divider ── */}
+            <div className="sr-current-row">
+                <div className="sr-current-line" />
+                <span className="sr-current-tag">◆ ${price.toFixed(2)}</span>
+                <div className="sr-current-line" />
             </div>
 
-            <div className="sr-price-axis">
-                <span>${minPrice.toFixed(0)}</span>
-                <span>${(minPrice + range * 0.25).toFixed(0)}</span>
-                <span>${(minPrice + range * 0.5).toFixed(0)}</span>
-                <span>${(minPrice + range * 0.75).toFixed(0)}</span>
-                <span>${maxPrice.toFixed(0)}</span>
-            </div>
+            {/* ── Support rows ── */}
+            {supportsSorted.length > 0 && (
+                <div className="sr-level-group">
+                    {supportsSorted.map((lvl, i) => {
+                        const origIdx = levels.supports.indexOf(lvl) + 1;
+                        const dist = ((price - lvl.price) / price * 100).toFixed(1);
+                        const barW = ((lvl.strength || 0) / maxStrength) * 100;
+                        return (
+                            <div key={`s${i}`} className="sr-level-row support">
+                                <span className="sr-level-badge support">S{origIdx}</span>
+                                <span className="sr-level-price">${lvl.price.toFixed(2)}</span>
+                                <span className="sr-level-dist support">−{dist}%</span>
+                                <div className="sr-level-strength">
+                                    <div className="sr-level-strength-bar support" style={{ width: `${barW}%` }} />
+                                </div>
+                                <span className="sr-level-meta">{lvl.strength}%</span>
+                                <span className="sr-level-touches">{lvl.touches}x</span>
+                                <span className="sr-level-type">{lvl.type}{lvl.fib ? ` · ${lvl.fib}` : ''}</span>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
         </div>
     );
 }
@@ -427,6 +466,7 @@ function CollapsibleHeader({ icon, title, right, collapsed, onToggle }) {
 const SECTIONS = [
     { id: 'overview', label: 'Overview' },
     { id: 'strategies', label: 'Strategies' },
+    { id: 'momentum', label: 'Momentum' },
     { id: 'sr', label: 'S&R' },
     { id: 'analysts', label: 'Analysts' },
     { id: 'news', label: 'News' },
@@ -452,6 +492,7 @@ export default function Analysis({ initialSymbol, onSymbolConsumed, analysisCach
     const sectionRefs = {
         overview: useRef(null),
         strategies: useRef(null),
+        momentum: useRef(null),
         sr: useRef(null),
         analysts: useRef(null),
         news: useRef(null),
@@ -661,6 +702,176 @@ export default function Analysis({ initialSymbol, onSymbolConsumed, analysisCach
                             </div>
                         </div>
 
+                        {/* ─── Momentum Indicators ─── */}
+                        {result.momentum && result.momentum.rsi != null && (
+                            <div ref={sectionRefs.momentum} className="card fade-in analysis-section" style={{ animationDelay: '0.09s' }}>
+                                <CollapsibleHeader
+                                    icon={<TrendingUp size={14} style={{ verticalAlign: 'middle' }} />}
+                                    title="Momentum Indicators"
+                                    right={(() => {
+                                        const m = result.momentum;
+                                        const fk = result.fallingKnife;
+                                        const trend = m.trendStatus || m.marketTrend || '';
+                                        const label = trend.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                                        const isUp = /uptrend|strong/i.test(trend);
+                                        const isDown = /down|below|bearish/i.test(trend);
+                                        return (
+                                            <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                                                {fk?.detected && (
+                                                    <span className={`badge ${fk.severity === 'severe' ? 'badge-red' : 'badge-amber'}`}>
+                                                        ⚠️ Falling Knife
+                                                    </span>
+                                                )}
+                                                {label && <span className={`badge ${isUp ? 'badge-green' : isDown ? 'badge-red' : 'badge-amber'}`}>{label}</span>}
+                                            </span>
+                                        );
+                                    })()}
+                                    collapsed={collapsed.momentum}
+                                    onToggle={() => toggleSection('momentum')}
+                                />
+                                <div className={`card-body-collapsible${collapsed.momentum ? ' collapsed' : ''}`}>
+                                    <div className="card-body">
+                                        <div className="momentum-grid">
+                                            {/* Falling Knife Warning */}
+                                            {result.fallingKnife?.detected && (
+                                                <div className={`falling-knife-alert ${result.fallingKnife.severity === 'severe' ? 'falling-knife-severe' : 'falling-knife-warning'}`}>
+                                                    <div className="falling-knife-header">
+                                                        <span className="falling-knife-icon">⚠️</span>
+                                                        <span className="falling-knife-title">
+                                                            {result.fallingKnife.severity === 'severe' ? 'Falling Knife — Do Not Trade' : 'Falling Knife Warning'}
+                                                        </span>
+                                                    </div>
+                                                    <div className="falling-knife-triggers">
+                                                        {result.fallingKnife.triggers.map((t, i) => (
+                                                            <span key={i} className="falling-knife-trigger">{t}</span>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* RSI */}
+                                            <div className="momentum-indicator">
+                                                <div className="momentum-label">RSI (14)</div>
+                                                <div className="momentum-value-row">
+                                                    <span className="momentum-value" style={{
+                                                        color: result.momentum.rsi <= 30 ? 'var(--green)' : result.momentum.rsi >= 70 ? 'var(--red)' : 'var(--text-primary)'
+                                                    }}>
+                                                        {result.momentum.rsi.toFixed(1)}
+                                                    </span>
+                                                    <span className={`badge ${result.momentum.rsi <= 30 ? 'badge-green' : result.momentum.rsi >= 70 ? 'badge-red' : 'badge-amber'}`} style={{ fontSize: 10 }}>
+                                                        {result.momentum.rsi <= 30 ? 'Oversold' : result.momentum.rsi >= 70 ? 'Overbought' : 'Neutral'}
+                                                    </span>
+                                                    {result.momentum.rsiDivergence && (
+                                                        <span className={`badge ${result.momentum.rsiDivergence === 'bullish' ? 'badge-green' : 'badge-red'}`} style={{ fontSize: 10 }}>
+                                                            {result.momentum.rsiDivergence === 'bullish' ? 'Bull. Divergence' : 'Bear. Divergence'}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <div className="momentum-bar-track">
+                                                    <div className="momentum-bar-fill" style={{
+                                                        width: `${result.momentum.rsi}%`,
+                                                        background: result.momentum.rsi <= 30 ? 'var(--green)' : result.momentum.rsi >= 70 ? 'var(--red)' : 'var(--amber)',
+                                                    }} />
+                                                    <div className="momentum-bar-marker" style={{ left: '30%' }} />
+                                                    <div className="momentum-bar-marker" style={{ left: '70%' }} />
+                                                </div>
+                                            </div>
+
+                                            {/* SMA Alignment — raw values from trend_continuation, or position from pullback */}
+                                            {(result.momentum.sma20 != null || result.momentum.vsSma20 != null) && (
+                                                <div className="momentum-indicator">
+                                                    <div className="momentum-label">Moving Averages</div>
+                                                    {result.momentum.sma20 != null ? (
+                                                        <>
+                                                            <div className="momentum-sma-row">
+                                                                {[
+                                                                    { label: 'SMA 20', val: result.momentum.sma20 },
+                                                                    { label: 'SMA 50', val: result.momentum.sma50 },
+                                                                    { label: 'SMA 200', val: result.momentum.sma200 },
+                                                                ].filter(s => s.val != null).map(s => (
+                                                                    <div key={s.label} className="sma-chip">
+                                                                        <span className="sma-chip-label">{s.label}</span>
+                                                                        <span className="sma-chip-value">${s.val.toFixed(2)}</span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                            {(() => {
+                                                                const m = result.momentum;
+                                                                const p = result.price;
+                                                                const aligned = m.sma20 > m.sma50 && m.sma50 > m.sma200 && p > m.sma20;
+                                                                const aboveSma200 = p > (m.sma200 || 0);
+                                                                return (
+                                                                    <div className="momentum-value-row" style={{ marginTop: 6 }}>
+                                                                        <span className={`badge ${aligned ? 'badge-green' : aboveSma200 ? 'badge-amber' : 'badge-red'}`} style={{ fontSize: 10 }}>
+                                                                            {aligned ? 'Perfect Alignment (20 > 50 > 200)' : aboveSma200 ? 'Above SMA 200' : 'Below SMA 200'}
+                                                                        </span>
+                                                                        {m.smaAllRising === true && (
+                                                                            <span className="badge badge-green" style={{ fontSize: 10 }}>All Rising</span>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })()}
+                                                        </>
+                                                    ) : (
+                                                        <div className="momentum-value-row" style={{ flexWrap: 'wrap', gap: 6 }}>
+                                                            {result.momentum.vsSma20 && (
+                                                                <span className={`badge ${result.momentum.vsSma20 === 'above' ? 'badge-green' : 'badge-red'}`} style={{ fontSize: 10 }}>
+                                                                    {result.momentum.vsSma20 === 'above' ? 'Above SMA 20' : 'Below SMA 20'}
+                                                                </span>
+                                                            )}
+                                                            {result.momentum.vsSma200 && (
+                                                                <span className={`badge ${result.momentum.vsSma200 === 'above' ? 'badge-green' : 'badge-red'}`} style={{ fontSize: 10 }}>
+                                                                    {result.momentum.vsSma200 === 'above' ? 'Above SMA 200' : 'Below SMA 200'}
+                                                                </span>
+                                                            )}
+                                                            {result.momentum.trendAlignment && (
+                                                                <span className={`badge ${result.momentum.trendAlignment === 'perfect' ? 'badge-green' : result.momentum.trendAlignment === 'moderate' ? 'badge-amber' : 'badge-red'}`} style={{ fontSize: 10 }}>
+                                                                    {result.momentum.trendAlignment.charAt(0).toUpperCase() + result.momentum.trendAlignment.slice(1)} Alignment
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            {/* Trend & Momentum Score */}
+                                            <div className="momentum-indicator">
+                                                <div className="momentum-label">Trend & Momentum</div>
+                                                <div className="momentum-value-row" style={{ flexWrap: 'wrap', gap: 6 }}>
+                                                    {result.momentum.trendStatus && (
+                                                        <span className="strategy-component-chip">
+                                                            Trend: <strong>{result.momentum.trendStatus.replace(/_/g, ' ')}</strong>
+                                                        </span>
+                                                    )}
+                                                    {result.momentum.adx != null && (
+                                                        <span className="strategy-component-chip">
+                                                            ADX: <strong>{result.momentum.adx.toFixed(1)}</strong>
+                                                        </span>
+                                                    )}
+                                                    {result.momentum.macdSignal && (
+                                                        <span className="strategy-component-chip">
+                                                            MACD: <strong>{result.momentum.macdSignal}</strong>
+                                                        </span>
+                                                    )}
+                                                    {result.momentum.stochSignal && (
+                                                        <span className="strategy-component-chip">
+                                                            Stoch: <strong>{result.momentum.stochSignal}</strong>
+                                                            {result.momentum.stochK != null && <> ({result.momentum.stochK.toFixed(0)})</>}
+                                                        </span>
+                                                    )}
+                                                    {result.momentum.marketTrend && (
+                                                        <span className="strategy-component-chip">
+                                                            SPY: <strong>{result.momentum.marketTrend.replace(/_/g, ' ')}</strong>
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         {/* ─── Support & Resistance (graphical) ─── */}
                         <div ref={sectionRefs.sr} className="card fade-in analysis-section" style={{ animationDelay: '0.1s' }}>
                             <CollapsibleHeader
@@ -859,7 +1070,7 @@ export default function Analysis({ initialSymbol, onSymbolConsumed, analysisCach
                                             <div><span className="trade-rec-label">Prob. Profit</span><div className="trade-rec-value" style={{ color: 'var(--green)' }}>{result.recommendation.probProfit.toFixed(0)}%</div></div>
                                         )}
                                         {result.recommendation.confidenceScore != null && (
-                                            <div><span className="trade-rec-label">Confidence</span><div className="trade-rec-value">{result.recommendation.confidenceScore}/100</div></div>
+                                            <div><span className="trade-rec-label">Strike Quality</span><div className="trade-rec-value">{result.recommendation.confidenceScore}/100</div></div>
                                         )}
                                     </div>
                                     {result.recommendation.warnings?.length > 0 && (

@@ -4,205 +4,45 @@ import {
     TrendingUp,
     TrendingDown,
     Gauge,
-    Zap,
     Shield,
-    Target,
-    AlertTriangle,
-    ExternalLink,
+    Calendar,
+    BarChart3,
+    Newspaper,
     ChevronDown,
-    Clock,
     Info,
+    ExternalLink,
+    Minus,
 } from 'lucide-react';
-import { fetchVixJson, fetchQuotesJson, runScanJson, fetchPortfolioPositions } from '../api';
+import {
+    fetchVixJson,
+    fetchQuotesJson,
+    fetchEventsJson,
+    fetchSectorsJson,
+    fetchEarningsCalendarJson,
+    fetchMarketNewsJson,
+} from '../api';
 
 // ──────────────────────────────────────────────────────────
-// Fallback data (used when API is unavailable)
+// Fallback data
 // ──────────────────────────────────────────────────────────
 
 const FALLBACK_VIX = 18.5;
 const FALLBACK_REGIME = 'Normal';
 
-const FALLBACK_PICKS = [
-    { symbol: 'AAPL', strategy: 'Pullback', score: 7.8, signal: 'Strong', stability: 92, ivRank: 42 },
-    { symbol: 'MSFT', strategy: 'Trend', score: 7.2, signal: 'Strong', stability: 88, ivRank: 35 },
-    { symbol: 'GOOGL', strategy: 'Bounce', score: 6.9, signal: 'Moderate', stability: 85, ivRank: 51 },
-    { symbol: 'AMZN', strategy: 'Pullback', score: 6.5, signal: 'Moderate', stability: 82, ivRank: 63 },
-    { symbol: 'META', strategy: 'Breakout', score: 6.3, signal: 'Moderate', stability: 79, ivRank: 58 },
-];
+const MARKET_SYMBOLS = ['SPX', 'SPY', 'QQQ', 'DJI', 'NDQ', 'DEU40', 'XAUUSD', 'XAGUSD', 'CL1!', 'EURUSD'];
 
 const FALLBACK_MARKET = [
-    { symbol: 'SPY', price: 592.34, change: 1.25, direction: 'up' },
-    { symbol: 'QQQ', price: 518.89, change: 0.88, direction: 'up' },
-    { symbol: 'IWM', price: 224.56, change: -0.32, direction: 'down' },
-    { symbol: 'DIA', price: 438.12, change: 0.45, direction: 'up' },
-    { symbol: 'GLD', price: 186.70, change: 0.62, direction: 'up' },
-    { symbol: 'TLT', price: 92.15, change: -0.18, direction: 'down' },
-    { symbol: 'VIX', price: 18.50, change: 5.2, direction: 'alert' },
+    { symbol: 'SPX', name: 'S&P 500', price: 6082.00, change_pct: 0.52 },
+    { symbol: 'SPY', name: 'SPDR S&P 500', price: 605.12, change_pct: 0.48 },
+    { symbol: 'QQQ', name: 'Invesco QQQ', price: 533.20, change_pct: 0.65 },
+    { symbol: 'DJI', name: 'Dow Jones', price: 44500.00, change_pct: 0.31 },
+    { symbol: 'NDQ', name: 'Nasdaq Comp.', price: 19890.00, change_pct: 0.72 },
+    { symbol: 'DEU40', name: 'DAX 40', price: 22400.00, change_pct: -0.15 },
+    { symbol: 'XAUUSD', name: 'Gold', price: 2935.00, change_pct: 0.42 },
+    { symbol: 'XAGUSD', name: 'Silver', price: 32.80, change_pct: 0.88 },
+    { symbol: 'CL1!', name: 'Crude Oil', price: 72.50, change_pct: -0.65 },
+    { symbol: 'EURUSD', name: 'EUR/USD', price: 1.0485, change_pct: 0.12 },
 ];
-
-const FALLBACK_POSITIONS = [
-    { id: 'D001', symbol: 'NVDA', type: 'bull-put-spread', strategy: 'Pullback', shortStrike: 115, longStrike: 110, expiration: '2026-04-17', dte: 59, qty: 2, credit: 1.45, currentValue: 0.84, status: 'open' },
-    { id: 'D002', symbol: 'AAPL', type: 'short-put', strategy: 'Pullback', shortStrike: 215, longStrike: null, expiration: '2026-03-21', dte: 32, qty: 1, credit: 2.85, currentValue: 1.30, status: 'open' },
-    { id: 'D003', symbol: 'TSLA', type: 'long-call', strategy: 'Breakout', longStrike: 340, shortStrike: null, expiration: '2026-06-19', dte: 122, qty: 5, debit: 18.50, currentValue: 24.30, status: 'open' },
-    { id: 'D004', symbol: 'META', type: 'bull-call-spread', strategy: 'Trend', longStrike: 620, shortStrike: 650, expiration: '2026-04-17', dte: 59, qty: 2, debit: 8.20, currentValue: 12.50, status: 'open' },
-    { id: 'D005', symbol: 'AMD', type: 'bull-put-spread', strategy: 'Bounce', shortStrike: 100, longStrike: 95, expiration: '2026-03-21', dte: 32, qty: 3, credit: 1.20, currentValue: 0.87, status: 'open' },
-    { id: 'D006', symbol: 'CRM', type: 'bull-put-spread', strategy: 'Trend', shortStrike: 280, longStrike: 275, expiration: '2026-04-17', dte: 59, qty: 1, credit: 1.10, currentValue: 1.42, status: 'open' },
-];
-
-// ── Map API scan signal to dashboard pick format ──
-
-function signalToPick(signal) {
-    const strength = signal.strength || '';
-    return {
-        symbol: signal.symbol,
-        strategy: (signal.strategy || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
-        score: signal.score ?? 0,
-        signal: strength.charAt(0).toUpperCase() + strength.slice(1).toLowerCase(),
-        stability: signal.details?.stability_score ?? signal.details?.stability?.stability_score ?? 0,
-        ivRank: signal.details?.iv_rank ?? 0,
-    };
-}
-
-// ── Map API portfolio position to dashboard format ──
-
-function apiPositionToDashboard(p) {
-    // IBKR live positions have flat fields
-    if (p.source === 'ibkr') {
-        const type = p.strategy?.toLowerCase()?.replace(/\s+/g, '-') || 'other';
-        return {
-            id: p.id,
-            symbol: p.symbol,
-            type,
-            strategy: p.strategy ?? '—',
-            shortStrike: p.short_strike ?? null,
-            longStrike: p.long_strike ?? null,
-            expiration: p.expiration ?? '',
-            dte: p.dte ?? 0,
-            qty: p.contracts ?? Math.abs(p.quantity ?? 1),
-            credit: p.net_credit ?? 0,
-            debit: p.debit ?? null,
-            unrealizedPnl: p.unrealized_pnl ?? null,
-            maxProfit: p.max_profit ?? null,
-            maxLoss: p.max_loss ?? null,
-            ibkr: true,
-            status: p.status === 'open' ? 'open' : 'closed',
-        };
-    }
-
-    // Local PortfolioManager format
-    const shortStrike = p.short_leg?.strike ?? null;
-    const longStrike = p.long_leg?.strike ?? null;
-    const expiration = p.short_leg?.expiration ?? p.long_leg?.expiration ?? '';
-    const now = new Date();
-    const exp = new Date(expiration);
-    const dte = Math.max(0, Math.round((exp - now) / (1000 * 60 * 60 * 24)));
-    const credit = Math.abs(p.short_leg?.premium ?? 0) + Math.abs(p.long_leg?.premium ?? 0);
-    return {
-        id: p.id,
-        symbol: p.symbol,
-        type: 'bull-put-spread',
-        strategy: 'Pullback',
-        shortStrike,
-        longStrike,
-        expiration,
-        dte,
-        qty: p.contracts ?? 1,
-        credit,
-        currentValue: credit * 0.6,
-        status: p.status === 'open' ? 'open' : 'closed',
-    };
-}
-
-const TYPE_LABELS = {
-    'bull-put-spread': 'Bull Put',
-    'bear-call-spread': 'Bear Call',
-    'bull-call-spread': 'Bull Call',
-    'bear-put-spread': 'Bear Put',
-    'iron-condor': 'Iron Condor',
-    'iron-butterfly': 'Iron Bfly',
-    'call-butterfly': 'Call Bfly',
-    'put-butterfly': 'Put Bfly',
-    'short-straddle': 'Short Straddle',
-    'long-straddle': 'Long Straddle',
-    'short-strangle': 'Short Strangle',
-    'long-strangle': 'Long Strangle',
-    'short-put': 'Naked Put',
-    'short-call': 'Naked Call',
-    'long-call': 'Long Call',
-    'long-put': 'Long Put',
-    'stock': 'Stock',
-};
-
-const TYPE_COLORS = {
-    'bull-put-spread': 'badge-indigo',
-    'bear-call-spread': 'badge-amber',
-    'bull-call-spread': 'badge-green',
-    'bear-put-spread': 'badge-red',
-    'iron-condor': 'badge-indigo',
-    'iron-butterfly': 'badge-indigo',
-    'call-butterfly': 'badge-green',
-    'put-butterfly': 'badge-amber',
-    'short-straddle': 'badge-amber',
-    'long-straddle': 'badge-green',
-    'short-strangle': 'badge-amber',
-    'long-strangle': 'badge-green',
-    'short-put': 'badge-amber',
-    'short-call': 'badge-red',
-    'long-call': 'badge-green',
-    'long-put': 'badge-red',
-    'stock': 'badge-indigo',
-};
-
-// ── P&L helpers ──
-
-function isCredit(p) {
-    return p.type === 'bull-put-spread' || p.type === 'short-put';
-}
-
-function positionPnlTotal(p) {
-    if (p.ibkr && p.unrealizedPnl != null) return p.unrealizedPnl;
-    if (isCredit(p) && p.currentValue != null) return (p.credit - p.currentValue) * 100 * p.qty;
-    if (p.currentValue != null && p.debit) return (p.currentValue - p.debit) * 100 * p.qty;
-    return 0;
-}
-
-function positionPnlPct(p) {
-    if (p.ibkr && p.unrealizedPnl != null) {
-        const basis = p.maxLoss || (p.credit ? p.credit * p.qty * 100 : p.debit ? p.debit * p.qty * 100 : 1);
-        return basis ? (p.unrealizedPnl / basis) * 100 : 0;
-    }
-    if (isCredit(p) && p.currentValue != null && p.credit) {
-        return ((p.credit - p.currentValue) / p.credit) * 100;
-    }
-    if (p.currentValue != null && p.debit) {
-        return ((p.currentValue - p.debit) / p.debit) * 100;
-    }
-    return 0;
-}
-
-function formatStrikes(p) {
-    const t = p.type;
-    if (t === 'bull-put-spread' || t === 'bear-put-spread') return `${p.shortStrike}/${p.longStrike}p`;
-    if (t === 'bull-call-spread' || t === 'bear-call-spread') return `${p.longStrike}/${p.shortStrike}c`;
-    if (t === 'short-put' || t === 'long-put') return `${p.shortStrike ?? p.longStrike}p`;
-    if (t === 'short-call' || t === 'long-call') return `${p.longStrike ?? p.shortStrike}c`;
-    if (p.shortStrike && p.longStrike) return `${p.shortStrike}/${p.longStrike}`;
-    if (p.shortStrike) return `${p.shortStrike}`;
-    if (p.longStrike) return `${p.longStrike}`;
-    return '—';
-}
-
-function StatusBadge({ position }) {
-    const pnl = positionPnlTotal(position);
-    const p = position;
-    if (p.dte <= 7) return <span className="badge badge-amber">Expiring</span>;
-    if (p.ibkr && p.maxProfit && pnl >= p.maxProfit * 0.5) return <span className="badge badge-green">Take Profit</span>;
-    if (p.ibkr && p.maxLoss && pnl <= -p.maxLoss * 0.5) return <span className="badge badge-red">Defend</span>;
-    if (pnl > 0) return <span className="badge badge-green">Profit</span>;
-    if (pnl < 0 && p.dte <= 14) return <span className="badge badge-amber">Watch</span>;
-    if (pnl < 0) return <span className="badge badge-red">Loss</span>;
-    return <span className="badge badge-indigo">Holding</span>;
-}
 
 // ──────────────────────────────────────────────────────────
 // Collapsible header
@@ -223,7 +63,7 @@ function CollapsibleHeader({ icon, title, right, collapsed, onToggle }) {
 }
 
 // ──────────────────────────────────────────────────────────
-// VIX Gauge
+// VIX Gauge (kept from original)
 // ──────────────────────────────────────────────────────────
 
 function VixGauge({ value, regime }) {
@@ -260,11 +100,6 @@ function VixGauge({ value, regime }) {
     );
 }
 
-function StrategyBadge({ strategy }) {
-    const cls = `strategy-chip strategy-${strategy.toLowerCase()}`;
-    return <span className={cls}>{strategy}</span>;
-}
-
 // ──────────────────────────────────────────────────────────
 // Skeleton
 // ──────────────────────────────────────────────────────────
@@ -285,26 +120,39 @@ function DashboardSkeleton() {
                 </div>
                 <div className="skeleton-card">
                     <div className="skeleton skeleton-title" />
-                    <div className="skeleton skeleton-line w-100" />
-                    <div className="skeleton skeleton-line w-100" />
-                    <div className="skeleton skeleton-line w-100" />
-                    <div className="skeleton skeleton-line w-80" />
+                    {[0, 1, 2, 3, 4].map(i => <div key={i} className="skeleton skeleton-line w-100" />)}
                 </div>
             </div>
-            <div className="skeleton-card analysis-section fade-in" style={{ animationDelay: '0.1s' }}>
-                <div className="skeleton skeleton-title" />
-                <div className="skeleton skeleton-line w-100" />
-                <div className="skeleton skeleton-line w-100" />
-                <div className="skeleton skeleton-line w-80" />
-            </div>
-            <div className="skeleton-card fade-in" style={{ animationDelay: '0.15s' }}>
-                <div className="skeleton skeleton-title" />
-                <div className="skeleton skeleton-line w-100" />
-                <div className="skeleton skeleton-line w-100" />
-                <div className="skeleton skeleton-line w-60" />
-            </div>
+            {[0, 1, 2].map(i => (
+                <div key={i} className="skeleton-card analysis-section fade-in" style={{ animationDelay: `${0.1 + i * 0.05}s` }}>
+                    <div className="skeleton skeleton-title" />
+                    {[0, 1, 2].map(j => <div key={j} className="skeleton skeleton-line w-100" />)}
+                </div>
+            ))}
         </>
     );
+}
+
+// ──────────────────────────────────────────────────────────
+// Impact badge for events
+// ──────────────────────────────────────────────────────────
+
+function ImpactBadge({ impact }) {
+    const cls = impact === 'HIGH' || impact === 'CRITICAL' ? 'badge-red'
+        : impact === 'MEDIUM' ? 'badge-amber'
+        : 'badge-muted';
+    return <span className={`badge ${cls}`} style={{ fontSize: 10 }}>{impact}</span>;
+}
+
+// ──────────────────────────────────────────────────────────
+// Sector regime badge
+// ──────────────────────────────────────────────────────────
+
+function RegimeBadge({ regime }) {
+    const cls = regime === 'STRONG' ? 'badge-green'
+        : regime === 'WEAK' || regime === 'CRISIS' ? 'badge-red'
+        : 'badge-muted';
+    return <span className={`badge ${cls}`} style={{ fontSize: 10 }}>{regime}</span>;
 }
 
 // ──────────────────────────────────────────────────────────
@@ -318,18 +166,22 @@ export default function Dashboard({ onSymbolClick }) {
 
     const [vix, setVix] = useState(FALLBACK_VIX);
     const [regime, setRegime] = useState(FALLBACK_REGIME);
-    const [picks, setPicks] = useState(FALLBACK_PICKS);
     const [market, setMarket] = useState(FALLBACK_MARKET);
-    const [positions, setPositions] = useState(FALLBACK_POSITIONS);
+    const [events, setEvents] = useState([]);
+    const [sectors, setSectors] = useState([]);
+    const [earnings, setEarnings] = useState([]);
+    const [news, setNews] = useState([]);
 
     useEffect(() => {
         let cancelled = false;
         async function loadData() {
             const results = await Promise.allSettled([
                 fetchVixJson(),
-                fetchQuotesJson(['SPY', 'QQQ', 'IWM', 'DIA', 'GLD', 'TLT']),
-                runScanJson({ strategy: 'multi', max_results: 5 }),
-                fetchPortfolioPositions('open'),
+                fetchQuotesJson(MARKET_SYMBOLS),
+                fetchEventsJson(30),
+                fetchSectorsJson(),
+                fetchEarningsCalendarJson(5),
+                fetchMarketNewsJson(5),
             ]);
             if (cancelled) return;
 
@@ -343,28 +195,28 @@ export default function Dashboard({ onSymbolClick }) {
 
             // Market quotes
             if (results[1].status === 'fulfilled' && results[1].value.quotes?.length) {
-                const quotes = results[1].value.quotes;
-                setMarket(quotes.map(q => ({
-                    symbol: q.symbol,
-                    price: q.price ?? 0,
-                    change: q.change_pct ?? 0,
-                    direction: (q.change_pct ?? 0) > 0 ? 'up' : (q.change_pct ?? 0) < 0 ? 'down' : 'up',
-                })));
+                setMarket(results[1].value.quotes);
             } else { usedFallback = true; }
 
-            // Top picks from scan
-            if (results[2].status === 'fulfilled' && results[2].value.signals?.length) {
-                setPicks(results[2].value.signals.map(signalToPick));
-            } else { usedFallback = true; }
+            // Events
+            if (results[2].status === 'fulfilled' && results[2].value.events) {
+                setEvents(results[2].value.events);
+            }
 
-            // Portfolio positions
-            if (results[3].status === 'fulfilled' && results[3].value.positions) {
-                if (results[3].value.positions.length) {
-                    setPositions(results[3].value.positions.map(apiPositionToDashboard));
-                } else {
-                    setPositions([]);
-                }
-            } else { usedFallback = true; }
+            // Sectors
+            if (results[3].status === 'fulfilled' && results[3].value.sectors) {
+                setSectors(results[3].value.sectors);
+            }
+
+            // Earnings
+            if (results[4].status === 'fulfilled' && results[4].value.earnings) {
+                setEarnings(results[4].value.earnings);
+            }
+
+            // News
+            if (results[5].status === 'fulfilled' && results[5].value.news) {
+                setNews(results[5].value.news);
+            }
 
             setDemoMode(usedFallback);
             setLoading(false);
@@ -375,17 +227,23 @@ export default function Dashboard({ onSymbolClick }) {
 
     const toggleSection = (id) => setCollapsed(prev => ({ ...prev, [id]: !prev[id] }));
 
-    // Compute aggregate stats
-    const totalPnl = positions.reduce((sum, p) => sum + positionPnlTotal(p), 0);
-    const profitable = positions.filter(p => positionPnlTotal(p) > 0).length;
-
     const lastUpdated = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    // Extract SPY + QQQ from market for stat cards
+    const spy = market.find(m => m.symbol === 'SPY');
+    const qqq = market.find(m => m.symbol === 'QQQ');
+
+    const fmtChg = (pct) => {
+        if (pct == null) return '—';
+        return `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`;
+    };
+    const chgColor = (pct) => pct > 0 ? 'green' : pct < 0 ? 'red' : '';
 
     return (
         <>
             <div className="page-header">
-                <h2>Dashboard</h2>
-                <p>Market overview and daily trading signals</p>
+                <h2>Market Overview</h2>
+                <p>Indices, volatility, events, sectors & earnings at a glance</p>
                 {demoMode && (
                     <span style={{ fontSize: 11, color: 'var(--amber)', display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
                         <Info size={12} /> Demo mode — some data is simulated
@@ -398,35 +256,39 @@ export default function Dashboard({ onSymbolClick }) {
 
                 {!loading && (
                     <>
-                        {/* Top Stats Row */}
+                        {/* ─── Top Stats Row ─── */}
                         <div className="grid-4 analysis-section fade-in">
                             <div className="stat-card">
-                                <div className="stat-label">VIX Level</div>
+                                <div className="stat-label">VIX</div>
                                 <div className="stat-value amber">{vix.toFixed(1)}</div>
-                                <div className="stat-change" style={{ color: 'var(--text-muted)' }}>Regime: {regime}</div>
+                                <div className="stat-change" style={{ color: 'var(--text-muted)' }}>{regime}</div>
                             </div>
                             <div className="stat-card">
-                                <div className="stat-label">Active Positions</div>
-                                <div className="stat-value indigo">{positions.length}</div>
-                                <div className="stat-change" style={{ color: 'var(--green)' }}>{profitable} profitable</div>
-                            </div>
-                            <div className="stat-card">
-                                <div className="stat-label">Unrealized P&L</div>
-                                <div className={`stat-value ${totalPnl >= 0 ? 'green' : 'red'}`}>
-                                    {totalPnl >= 0 ? '+' : ''}${totalPnl.toFixed(0)}
+                                <div className="stat-label">SPY</div>
+                                <div className={`stat-value ${chgColor(spy?.change_pct)}`}>
+                                    {spy ? `$${spy.price.toFixed(2)}` : '—'}
                                 </div>
-                                <div className="stat-change" style={{ color: totalPnl >= 0 ? 'var(--green)' : 'var(--red)' }}>
-                                    across {positions.length} positions
+                                <div className="stat-change" style={{ color: spy?.change_pct >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                                    {fmtChg(spy?.change_pct)}
                                 </div>
                             </div>
                             <div className="stat-card">
-                                <div className="stat-label">Win Rate (30d)</div>
-                                <div className="stat-value green">87%</div>
-                                <div className="stat-change" style={{ color: 'var(--text-muted)' }}>13/15 trades</div>
+                                <div className="stat-label">QQQ</div>
+                                <div className={`stat-value ${chgColor(qqq?.change_pct)}`}>
+                                    {qqq ? `$${qqq.price.toFixed(2)}` : '—'}
+                                </div>
+                                <div className="stat-change" style={{ color: qqq?.change_pct >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                                    {fmtChg(qqq?.change_pct)}
+                                </div>
+                            </div>
+                            <div className="stat-card">
+                                <div className="stat-label">Upcoming Events</div>
+                                <div className="stat-value indigo">{events.filter(e => e.days_away <= 14).length}</div>
+                                <div className="stat-change" style={{ color: 'var(--text-muted)' }}>next 14 days</div>
                             </div>
                         </div>
 
-                        {/* VIX Gauge + Market Overview */}
+                        {/* ─── VIX Gauge + Market Indices ─── */}
                         <div className="grid-2 analysis-section">
                             <div className="card fade-in" style={{ animationDelay: '0.05s' }}>
                                 <CollapsibleHeader
@@ -444,162 +306,205 @@ export default function Dashboard({ onSymbolClick }) {
                             <div className="card fade-in" style={{ animationDelay: '0.1s' }}>
                                 <CollapsibleHeader
                                     icon={<Activity size={14} style={{ verticalAlign: 'middle' }} />}
-                                    title="Market Overview"
+                                    title="Market Indices"
                                     right={<span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Updated {lastUpdated}</span>}
                                     collapsed={collapsed.market}
                                     onToggle={() => toggleSection('market')}
                                 />
                                 <div className={`card-body-collapsible${collapsed.market ? ' collapsed' : ''}`}>
-                                    <div className="card-body" style={{ padding: 0 }}>
-                                        <div style={{ overflowX: 'auto' }}>
-                                            <table className="data-table">
-                                                <thead>
-                                                    <tr><th>Index</th><th>Price</th><th>Change</th><th>Trend</th></tr>
-                                                </thead>
-                                                <tbody>
-                                                    {market.map(m => {
-                                                        const color = m.direction === 'up' ? 'var(--green)' : m.direction === 'down' ? 'var(--red)' : 'var(--amber)';
-                                                        const Icon = m.direction === 'up' ? TrendingUp : m.direction === 'down' ? TrendingDown : AlertTriangle;
-                                                        return (
-                                                            <tr key={m.symbol}>
-                                                                <td className="symbol">{m.symbol}</td>
-                                                                <td>${m.price.toFixed(2)}</td>
-                                                                <td style={{ color }}>{m.change >= 0 ? '+' : ''}{m.change}%</td>
-                                                                <td><Icon size={14} style={{ color }} /></td>
-                                                            </tr>
-                                                        );
-                                                    })}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Daily Top Picks */}
-                        <div className="card fade-in analysis-section" style={{ animationDelay: '0.15s' }}>
-                            <CollapsibleHeader
-                                icon={<Zap size={14} style={{ verticalAlign: 'middle' }} />}
-                                title="Daily Top Picks"
-                                right={
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                        <span className="badge badge-indigo">{picks.length} picks</span>
-                                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Click to analyze</span>
-                                    </div>
-                                }
-                                collapsed={collapsed.picks}
-                                onToggle={() => toggleSection('picks')}
-                            />
-                            <div className={`card-body-collapsible${collapsed.picks ? ' collapsed' : ''}`}>
-                                <div style={{ overflowX: 'auto' }}>
-                                    <table className="data-table">
-                                        <thead>
-                                            <tr><th>Rank</th><th>Symbol</th><th>Strategy</th><th>Score</th><th>Signal</th><th>IV Rank</th><th>Stability</th><th></th></tr>
-                                        </thead>
-                                        <tbody>
-                                            {picks.map((pick, i) => (
-                                                <tr
-                                                    key={pick.symbol}
-                                                    onClick={() => onSymbolClick?.(pick.symbol)}
-                                                    className="clickable-row"
-                                                >
-                                                    <td style={{ color: 'var(--text-muted)' }}>#{i + 1}</td>
-                                                    <td className="symbol">{pick.symbol}</td>
-                                                    <td><StrategyBadge strategy={pick.strategy} /></td>
-                                                    <td className="score" style={{ color: pick.score >= 7 ? 'var(--green)' : 'var(--amber)' }}>{pick.score.toFixed(1)}</td>
-                                                    <td>
-                                                        <span className={`badge ${pick.signal === 'Strong' ? 'badge-green' : 'badge-amber'}`}>{pick.signal}</span>
-                                                    </td>
-                                                    <td>
-                                                        <span style={{ color: pick.ivRank >= 50 ? 'var(--amber)' : 'var(--text-secondary)' }}>{pick.ivRank}</span>
-                                                    </td>
-                                                    <td>
-                                                        <div className="stability-bar-wrap">
-                                                            <div className="stability-bar-track">
-                                                                <div className="stability-bar-fill" style={{ width: `${pick.stability}%`, background: pick.stability >= 80 ? 'var(--green)' : 'var(--amber)' }} />
-                                                            </div>
-                                                            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{pick.stability}</span>
-                                                        </div>
-                                                    </td>
-                                                    <td>
-                                                        <ExternalLink size={14} style={{ color: 'var(--text-muted)', opacity: 0.5 }} />
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Active Positions */}
-                        <div className="card fade-in" style={{ animationDelay: '0.25s' }}>
-                            <CollapsibleHeader
-                                icon={<Target size={14} style={{ verticalAlign: 'middle' }} />}
-                                title="Active Positions"
-                                right={<span className="badge badge-indigo">{positions.length} open</span>}
-                                collapsed={collapsed.positions}
-                                onToggle={() => toggleSection('positions')}
-                            />
-                            <div className={`card-body-collapsible${collapsed.positions ? ' collapsed' : ''}`}>
-                                {positions.length === 0 ? (
-                                    <div className="card-body" style={{ textAlign: 'center', padding: '32px 20px', color: 'var(--text-muted)' }}>
-                                        No active positions — paper TWS account is empty
-                                    </div>
-                                ) : (
                                     <div style={{ overflowX: 'auto' }}>
                                         <table className="data-table">
                                             <thead>
-                                                <tr>
-                                                    <th>Symbol</th>
-                                                    <th>Type</th>
-                                                    <th>Strategy</th>
-                                                    <th>Strikes</th>
-                                                    <th>Qty</th>
-                                                    <th>DTE</th>
-                                                    <th>P&L ($)</th>
-                                                    <th>P&L (%)</th>
-                                                    <th>Status</th>
-                                                    <th></th>
-                                                </tr>
+                                                <tr><th>Symbol</th><th>Name</th><th style={{ textAlign: 'right' }}>Price</th><th style={{ textAlign: 'right' }}>Change</th><th></th></tr>
                                             </thead>
                                             <tbody>
-                                                {positions.map((p) => {
-                                                    const pnl = positionPnlTotal(p);
-                                                    const pnlPct = positionPnlPct(p);
+                                                {market.map(m => {
+                                                    const pct = m.change_pct;
+                                                    const color = pct > 0 ? 'var(--green)' : pct < 0 ? 'var(--red)' : 'var(--text-muted)';
+                                                    const Icon = pct > 0 ? TrendingUp : pct < 0 ? TrendingDown : Minus;
+                                                    const fmtPrice = m.price >= 10 ? m.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : m.price.toFixed(4);
                                                     return (
-                                                        <tr
-                                                            key={p.id}
-                                                            onClick={() => onSymbolClick?.(p.symbol)}
-                                                            className="clickable-row"
-                                                        >
-                                                            <td className="symbol">{p.symbol}</td>
-                                                            <td><span className={`badge ${TYPE_COLORS[p.type] || 'badge-indigo'}`} style={{ fontSize: 10 }}>{TYPE_LABELS[p.type] || p.type}</span></td>
-                                                            <td>{p.ibkr ? <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Live</span> : <StrategyBadge strategy={p.strategy} />}</td>
-                                                            <td style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13 }}>{formatStrikes(p)}</td>
-                                                            <td>{p.qty}</td>
-                                                            <td>
-                                                                <span style={{ color: p.dte <= 14 ? 'var(--amber)' : 'var(--text-secondary)' }}>
-                                                                    {p.dte <= 7 && <Clock size={12} style={{ marginRight: 4, verticalAlign: 'middle' }} />}
-                                                                    {p.dte}d
-                                                                </span>
-                                                            </td>
-                                                            <td style={{ fontWeight: 600, color: pnl >= 0 ? 'var(--green)' : 'var(--red)' }}>
-                                                                {pnl >= 0 ? '+' : ''}${pnl.toFixed(0)}
-                                                            </td>
-                                                            <td style={{ fontWeight: 600, color: pnlPct >= 0 ? 'var(--green)' : 'var(--red)' }}>
-                                                                {pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(1)}%
-                                                            </td>
-                                                            <td><StatusBadge position={p} /></td>
-                                                            <td><ExternalLink size={14} style={{ color: 'var(--text-muted)', opacity: 0.5 }} /></td>
+                                                        <tr key={m.symbol}>
+                                                            <td className="symbol">{m.symbol}</td>
+                                                            <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>{m.name || m.symbol}</td>
+                                                            <td style={{ textAlign: 'right', fontFamily: "'JetBrains Mono', monospace" }}>{fmtPrice}</td>
+                                                            <td style={{ textAlign: 'right', color, fontWeight: 600 }}>{fmtChg(pct)}</td>
+                                                            <td><Icon size={14} style={{ color }} /></td>
                                                         </tr>
                                                     );
                                                 })}
                                             </tbody>
                                         </table>
                                     </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* ─── Upcoming Events ─── */}
+                        <div className="card fade-in analysis-section" style={{ animationDelay: '0.15s' }}>
+                            <CollapsibleHeader
+                                icon={<Calendar size={14} style={{ verticalAlign: 'middle' }} />}
+                                title="Upcoming Events"
+                                right={<span className="badge badge-indigo">{events.length} events</span>}
+                                collapsed={collapsed.events}
+                                onToggle={() => toggleSection('events')}
+                            />
+                            <div className={`card-body-collapsible${collapsed.events ? ' collapsed' : ''}`}>
+                                {events.length === 0 ? (
+                                    <div className="card-body" style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>
+                                        No upcoming events
+                                    </div>
+                                ) : (
+                                    <div style={{ overflowX: 'auto' }}>
+                                        <table className="data-table">
+                                            <thead>
+                                                <tr><th>Date</th><th>Days</th><th>Event</th><th>Description</th><th>Impact</th></tr>
+                                            </thead>
+                                            <tbody>
+                                                {events.map((ev, i) => (
+                                                    <tr key={i}>
+                                                        <td style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, whiteSpace: 'nowrap' }}>{ev.date}</td>
+                                                        <td style={{ fontWeight: 600, color: ev.days_away <= 3 ? 'var(--red)' : ev.days_away <= 7 ? 'var(--amber)' : 'var(--text-secondary)' }}>
+                                                            {ev.days_away}d
+                                                        </td>
+                                                        <td style={{ fontWeight: 600 }}>{ev.name}</td>
+                                                        <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>{ev.description}</td>
+                                                        <td><ImpactBadge impact={ev.impact} /></td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
                                 )}
+                            </div>
+                        </div>
+
+                        {/* ─── Sector Momentum ─── */}
+                        <div className="card fade-in analysis-section" style={{ animationDelay: '0.2s' }}>
+                            <CollapsibleHeader
+                                icon={<BarChart3 size={14} style={{ verticalAlign: 'middle' }} />}
+                                title="Sector Momentum"
+                                right={<span className="badge badge-indigo">{sectors.length} sectors</span>}
+                                collapsed={collapsed.sectors}
+                                onToggle={() => toggleSection('sectors')}
+                            />
+                            <div className={`card-body-collapsible${collapsed.sectors ? ' collapsed' : ''}`}>
+                                {sectors.length === 0 ? (
+                                    <div className="card-body" style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>
+                                        Sector data loading...
+                                    </div>
+                                ) : (
+                                    <div style={{ overflowX: 'auto' }}>
+                                        <table className="data-table">
+                                            <thead>
+                                                <tr><th>Sector</th><th>ETF</th><th style={{ textAlign: 'right' }}>Factor</th><th>Regime</th><th style={{ textAlign: 'right' }}>RS 30d</th><th style={{ textAlign: 'right' }}>RS 60d</th><th style={{ textAlign: 'right' }}>Breadth</th></tr>
+                                            </thead>
+                                            <tbody>
+                                                {sectors.map((s, i) => (
+                                                    <tr key={i}>
+                                                        <td style={{ fontWeight: 600 }}>{s.sector}</td>
+                                                        <td className="symbol">{s.etf}</td>
+                                                        <td style={{ textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontWeight: 600, color: s.momentum_factor >= 1.0 ? 'var(--green)' : s.momentum_factor < 0.85 ? 'var(--red)' : 'var(--text-secondary)' }}>
+                                                            {s.momentum_factor.toFixed(3)}
+                                                        </td>
+                                                        <td><RegimeBadge regime={s.regime} /></td>
+                                                        <td style={{ textAlign: 'right', color: s.rs_30d >= 0 ? 'var(--green)' : 'var(--red)', fontSize: 12 }}>
+                                                            {s.rs_30d >= 0 ? '+' : ''}{s.rs_30d.toFixed(2)}%
+                                                        </td>
+                                                        <td style={{ textAlign: 'right', color: s.rs_60d >= 0 ? 'var(--green)' : 'var(--red)', fontSize: 12 }}>
+                                                            {s.rs_60d >= 0 ? '+' : ''}{s.rs_60d.toFixed(2)}%
+                                                        </td>
+                                                        <td style={{ textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>{s.breadth.toFixed(3)}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* ─── Earnings Calendar + Top News ─── */}
+                        <div className="grid-2 analysis-section">
+                            <div className="card fade-in" style={{ animationDelay: '0.25s' }}>
+                                <CollapsibleHeader
+                                    icon={<Calendar size={14} style={{ verticalAlign: 'middle' }} />}
+                                    title="Upcoming Earnings"
+                                    right={<span className="badge badge-indigo">{earnings.length}</span>}
+                                    collapsed={collapsed.earnings}
+                                    onToggle={() => toggleSection('earnings')}
+                                />
+                                <div className={`card-body-collapsible${collapsed.earnings ? ' collapsed' : ''}`}>
+                                    {earnings.length === 0 ? (
+                                        <div className="card-body" style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>
+                                            No upcoming earnings from watchlist
+                                        </div>
+                                    ) : (
+                                        <div style={{ overflowX: 'auto' }}>
+                                            <table className="data-table">
+                                                <thead>
+                                                    <tr><th>Symbol</th><th>Date</th><th>Days</th><th>Status</th></tr>
+                                                </thead>
+                                                <tbody>
+                                                    {earnings.map((e, i) => {
+                                                        const statusCls = e.status === 'safe' ? 'badge-green' : e.status === 'caution' ? 'badge-amber' : 'badge-red';
+                                                        return (
+                                                            <tr
+                                                                key={i}
+                                                                onClick={() => onSymbolClick?.(e.symbol)}
+                                                                className="clickable-row"
+                                                            >
+                                                                <td className="symbol">{e.symbol}</td>
+                                                                <td style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>{e.date}</td>
+                                                                <td style={{ fontWeight: 600, color: e.days_away <= 14 ? 'var(--red)' : e.days_away <= 45 ? 'var(--amber)' : 'var(--text-secondary)' }}>
+                                                                    {e.days_away}d
+                                                                </td>
+                                                                <td><span className={`badge ${statusCls}`} style={{ fontSize: 10 }}>{e.status}</span></td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="card fade-in" style={{ animationDelay: '0.3s' }}>
+                                <CollapsibleHeader
+                                    icon={<Newspaper size={14} style={{ verticalAlign: 'middle' }} />}
+                                    title="Top News"
+                                    right={<span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{news.length} articles</span>}
+                                    collapsed={collapsed.news}
+                                    onToggle={() => toggleSection('news')}
+                                />
+                                <div className={`card-body-collapsible${collapsed.news ? ' collapsed' : ''}`}>
+                                    {news.length === 0 ? (
+                                        <div className="card-body" style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>
+                                            No news available
+                                        </div>
+                                    ) : (
+                                        <div className="news-list" style={{ padding: '8px 12px' }}>
+                                            {news.map((n, i) => (
+                                                <a
+                                                    key={i}
+                                                    href={n.link || n.url || '#'}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="news-card-link"
+                                                >
+                                                    <div className="news-card">
+                                                        <div className="news-title">{n.title}</div>
+                                                        <div className="news-meta">
+                                                            <span>{n.publisher || n.source || '—'}</span>
+                                                            <span>{n.date || ''}</span>
+                                                        </div>
+                                                    </div>
+                                                </a>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     </>
