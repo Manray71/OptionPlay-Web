@@ -99,6 +99,9 @@ export default function Scanner({ onSymbolClick, scanResults, setScanResults, sc
         if (!results) return null;
         let rows = [...results];
 
+        // Hide results with credit below $2 once analysis is loaded
+        rows = rows.filter(r => r.tradeQuality == null || (r.credit != null && r.credit >= 2.0));
+
         // Apply filters
         if (filters.symbol) {
             const q = filters.symbol.toUpperCase();
@@ -284,7 +287,7 @@ export default function Scanner({ onSymbolClick, scanResults, setScanResults, sc
                             {results === null
                                 ? '0 candidates'
                                 : <>
-                                    {hasActiveFilters ? `${shownCount} of ${totalCount}` : totalCount} candidates
+                                    {shownCount < totalCount ? `${shownCount} of ${totalCount}` : totalCount} candidates
                                     {scanTime && <> &middot; {scanTime.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} {scanTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</>}
                                 </>}
                             {prefetchProgress && prefetchProgress.done < prefetchProgress.total && (
