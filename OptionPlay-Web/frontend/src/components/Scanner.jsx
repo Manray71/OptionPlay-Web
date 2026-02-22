@@ -327,6 +327,7 @@ export default function Scanner({ onSymbolClick, scanResults, setScanResults, sc
                                             <SortableHeader label="Stability" column="stability" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
                                             <SortableHeader label="Win Rate" column="winRate" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
                                             <SortableHeader label="Credit" column="credit" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                                            <SortableHeader label="RoR" column="riskReward" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
                                             <SortableHeader label="Sector" column="sector" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
                                             <th></th>
                                         </tr>
@@ -361,6 +362,7 @@ export default function Scanner({ onSymbolClick, scanResults, setScanResults, sc
                                                     <option value="hasCredit">Has Credit</option>
                                                 </select>
                                             </td>
+                                            <td></td>
                                             <td><input className="table-filter-input" placeholder="Sector..." value={filters.sector} onChange={e => handleFilterChange('sector', e.target.value)} /></td>
                                             <td></td>
                                         </tr>
@@ -408,6 +410,9 @@ export default function Scanner({ onSymbolClick, scanResults, setScanResults, sc
                                                     ) : (
                                                         <div className="spinner" style={{ width: 10, height: 10, borderWidth: 1.5 }} />
                                                     )}
+                                                </td>
+                                                <td style={{ fontSize: 13, color: r.riskReward >= 0.40 ? 'var(--green)' : r.riskReward != null ? 'var(--text-secondary)' : 'var(--text-muted)' }}>
+                                                    {r.riskReward != null ? `${(r.riskReward * 100).toFixed(0)}%` : r.tradeQuality != null ? '—' : <div className="spinner" style={{ width: 10, height: 10, borderWidth: 1.5 }} />}
                                                 </td>
                                                 <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{r.sector}</td>
                                                 <td><ExternalLink size={14} style={{ color: 'var(--text-muted)', opacity: 0.5 }} /></td>
