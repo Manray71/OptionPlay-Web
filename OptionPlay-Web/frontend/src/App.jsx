@@ -46,10 +46,12 @@ function App() {
             const quality = rec.quality;
             const shortStrike = rec.short_strike;
             const longStrike = rec.long_strike;
+            const dataSource = rec.data_source;
+            const marketClosed = dataSource === 'mid_price' || dataSource === 'black_scholes';
             setScanResults(prev => {
                 if (!prev) return prev;
                 return prev.map(r => r.symbol === sym
-                    ? { ...r, credit: credit ?? null, tradeQuality: quality ?? 'none', shortStrike: shortStrike ?? null, longStrike: longStrike ?? null }
+                    ? { ...r, credit: credit ?? null, tradeQuality: quality ?? 'none', shortStrike: shortStrike ?? null, longStrike: longStrike ?? null, marketClosed }
                     : r
                 );
             });

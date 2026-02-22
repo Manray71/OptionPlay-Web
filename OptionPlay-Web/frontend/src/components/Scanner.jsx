@@ -200,6 +200,7 @@ export default function Scanner({ onSymbolClick, scanResults, setScanResults, sc
     }, [toast]);
 
     const today = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    const hasMarketClosed = results && results.some(r => r.marketClosed);
     const hasActiveFilters = filters.symbol || filters.sector || filters.strategy || filters.signal || filters.quality;
     const totalCount = results ? results.length : 0;
     const shownCount = processedResults ? processedResults.length : 0;
@@ -264,6 +265,13 @@ export default function Scanner({ onSymbolClick, scanResults, setScanResults, sc
                                 {toast.error && <span style={{ color: 'var(--amber)', marginLeft: 8 }}><Info size={12} style={{ verticalAlign: 'middle' }} /> Using sample data</span>}
                             </span>
                             <button className="scanner-toast-close" onClick={() => setToast(null)}>&times;</button>
+                        </div>
+                    )}
+
+                    {/* Market closed banner */}
+                    {hasMarketClosed && (
+                        <div style={{ padding: '8px 16px', background: 'rgba(255, 179, 0, 0.08)', borderBottom: '1px solid var(--border-subtle)', fontSize: 12, color: 'var(--amber)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <Info size={13} /> Market closed — credits estimated from last trading day
                         </div>
                     )}
 
@@ -390,7 +398,11 @@ export default function Scanner({ onSymbolClick, scanResults, setScanResults, sc
                                                 <td style={{ color: r.winRate >= 90 ? 'var(--green)' : 'var(--text-secondary)' }}>{r.winRate}%</td>
                                                 <td>
                                                     {r.credit != null && r.credit > 0 ? (
-                                                        <span style={{ color: r.tradeQuality === 'poor' ? 'var(--amber)' : 'var(--green)', fontWeight: 600, fontSize: 13 }}>${r.credit.toFixed(2)}</span>
+                                                        r.marketClosed ? (
+                                                            <span style={{ color: 'var(--text-muted)', fontWeight: 500, fontSize: 13 }} title="Estimated from last trading day">~${r.credit.toFixed(2)}</span>
+                                                        ) : (
+                                                            <span style={{ color: r.tradeQuality === 'poor' ? 'var(--amber)' : 'var(--green)', fontWeight: 600, fontSize: 13 }}>${r.credit.toFixed(2)}</span>
+                                                        )
                                                     ) : r.tradeQuality != null ? (
                                                         <span style={{ fontSize: 11, color: 'var(--amber)' }} title="Low OI — no liquid strikes">N/A</span>
                                                     ) : (

@@ -896,6 +896,8 @@ async def analyze_symbol(symbol: str):
                             "right": "P",
                             "bid": opt.bid,
                             "ask": opt.ask,
+                            "mid": opt.mid,
+                            "last": opt.last,
                             "delta": opt.delta,
                             "iv": opt.implied_volatility,
                             "dte": (opt.expiry - date.today()).days,
