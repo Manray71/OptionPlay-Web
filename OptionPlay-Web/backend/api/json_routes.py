@@ -1299,7 +1299,6 @@ async def get_sectors():
         from src.services.sector_cycle_service import SectorCycleService
 
         service = SectorCycleService()
-        loop = asyncio.get_event_loop()
         statuses = await service.get_all_sector_statuses()
 
         result = []
