@@ -158,7 +158,7 @@ export default function Scanner({ onSymbolClick, scanResults, setScanResults, sc
                 strategy: selectedStrategy,
                 min_score: minScore,
                 list_type: listType,
-                max_results: 20,
+                max_results: 50,
             });
             const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
             if (data.error || !data.signals) throw new Error(data.error || 'No signals');
