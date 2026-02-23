@@ -4,7 +4,7 @@ from dataclasses import asdict
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 import asyncio
 import os
 
@@ -23,6 +23,22 @@ class ScanRequest(BaseModel):
     min_score: float = 3.5
     list_type: str = "stable"
     max_results: int = 10
+
+class ShadowLogRequest(BaseModel):
+    symbol: str
+    strategy: str
+    score: float
+    short_strike: float
+    long_strike: float
+    spread_width: float
+    est_credit: float
+    expiration: str
+    dte: int
+    price_at_log: float
+    enhanced_score: Optional[float] = None
+    liquidity_tier: Optional[int] = None
+    stability_at_log: Optional[float] = None
+    trade_context: Optional[dict] = None
 
 
 # ── Helpers ──
@@ -1409,6 +1425,157 @@ async def get_earnings_calendar(count: int = 5):
         return {"earnings": earnings_list[:count]}
     except Exception as e:
         return _error(str(e))
+
+
+@router.post("/shadow-log")
+async def log_shadow_trade(req: ShadowLogRequest):
+    """Log a shadow trade from the scanner UI.
+
+    Mirrors the daily_picks shadow-logging logic in scan_composed.py:
+    1. Settings check (enabled, auto_log_min_score)
+    2. Strategy name mapping
+    3. Tradability check against live options chain (if Tradier available)
+    4. log_trade() on success, log_rejection() on failure
+    5. VIX + regime attached automatically
+    """
+    import sys
+    optionplay_dir = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "../../../OptionPlay")
+    )
+    if optionplay_dir not in sys.path:
+        sys.path.insert(0, optionplay_dir)
+
+    from src.shadow_tracker import ShadowTracker, check_tradability
+
+    # ── Settings check ──
+    try:
+        settings = ShadowTracker._load_settings_static()
+        if not settings.get("enabled", True):
+            return {"trade_id": None, "status": "disabled"}
+    except Exception:
+        pass
+
+    # ── Strategy name mapping (frontend display → backend enum) ──
+    strategy_map = {
+        "pullback": "pullback",
+        "bounce": "bounce",
+        "support bounce": "bounce",
+        "ath breakout": "ath_breakout",
+        "breakout": "ath_breakout",
+        "earnings dip": "earnings_dip",
+        "trend continuation": "trend_continuation",
+        "trend": "trend_continuation",
+    }
+    strategy = strategy_map.get(
+        req.strategy.lower(), req.strategy.lower().replace(" ", "_")
+    )
+    symbol = req.symbol.upper()
+
+    # ── VIX + Regime ──
+    vix_at_log = None
+    regime_at_log = None
+    try:
+        server = await get_server()
+        if server:
+            vix_at_log = await server.handlers.vix.get_vix()
+            if vix_at_log is not None:
+                ctx = server.handlers.analysis._ctx
+                regime = ctx.vix_selector.get_regime(vix_at_log)
+                regime_at_log = regime.value if hasattr(regime, "value") else str(regime)
+    except Exception:
+        pass
+
+    # ── Tradability check against live chain ──
+    tradeable = True
+    rejection_reason = None
+    chain_details = {}
+    try:
+        server = server if "server" in dir() else await get_server()
+        if server and server.handlers.analysis._ctx.tradier_connected:
+            provider = server.handlers.analysis._ctx.tradier_provider
+            if provider and req.expiration:
+                tradeable, rejection_reason, chain_details = await check_tradability(
+                    provider, symbol, req.expiration,
+                    req.short_strike, req.long_strike,
+                )
+    except Exception:
+        # Tradability check failed — log with estimated data anyway
+        tradeable = True
+        chain_details = {}
+
+    # ── Serialize trade context ──
+    context_json = None
+    if req.trade_context:
+        import json as _json2
+        try:
+            context_json = _json2.dumps(req.trade_context, default=str)
+        except Exception:
+            pass
+
+    tracker = ShadowTracker()
+    try:
+        if tradeable:
+            trade_id = tracker.log_trade(
+                source="scan",
+                symbol=symbol,
+                strategy=strategy,
+                score=req.score,
+                enhanced_score=req.enhanced_score,
+                liquidity_tier=req.liquidity_tier,
+                short_strike=req.short_strike,
+                long_strike=req.long_strike,
+                spread_width=req.spread_width,
+                est_credit=chain_details.get("net_credit", req.est_credit),
+                expiration=req.expiration,
+                dte=req.dte,
+                short_bid=chain_details.get("short_bid"),
+                short_ask=chain_details.get("short_ask"),
+                short_oi=chain_details.get("short_oi"),
+                long_bid=chain_details.get("long_bid"),
+                long_ask=chain_details.get("long_ask"),
+                long_oi=chain_details.get("long_oi"),
+                price_at_log=req.price_at_log,
+                vix_at_log=vix_at_log,
+                regime_at_log=regime_at_log,
+                stability_at_log=req.stability_at_log,
+                trade_context=context_json,
+            )
+
+            if trade_id:
+                return {
+                    "trade_id": trade_id,
+                    "status": "logged",
+                    "credit": chain_details.get("net_credit", req.est_credit),
+                }
+            else:
+                return {"trade_id": None, "status": "duplicate"}
+        else:
+            # Not tradeable — log rejection
+            import json as _json
+            tracker.log_rejection(
+                source="scan",
+                symbol=symbol,
+                strategy=strategy,
+                score=req.score,
+                liquidity_tier=req.liquidity_tier,
+                short_strike=req.short_strike,
+                long_strike=req.long_strike,
+                rejection_reason=rejection_reason or "not_tradeable",
+                actual_credit=chain_details.get("net_credit"),
+                short_oi=chain_details.get("short_oi"),
+                details=_json.dumps(chain_details),
+            )
+            return {
+                "trade_id": None,
+                "status": "rejected",
+                "reason": rejection_reason,
+            }
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    except Exception as e:
+        return _error(str(e), status=500)
+    finally:
+        tracker.close()
 
 
 @router.get("/market-news")

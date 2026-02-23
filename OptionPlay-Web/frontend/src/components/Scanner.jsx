@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
-import { Play, Filter, ExternalLink, ChevronUp, ChevronDown, Search, Info, Download } from 'lucide-react';
-import { runScanJson } from '../api';
+import { Play, Filter, ExternalLink, ChevronUp, ChevronDown, Search, Info, Download, BookmarkPlus, Check } from 'lucide-react';
+import { runScanJson, logShadowTrade } from '../api';
 import { exportScannerPdf } from '../utils/exportScannerPdf';
 
 const STRATEGIES = [
@@ -63,6 +63,9 @@ export default function Scanner({ onSymbolClick, scanResults, setScanResults, sc
     const results = scanResults;
     const setResults = setScanResults;
     const [isScanning, setIsScanning] = useState(false);
+
+    // Shadow trade log state: { [symbol]: 'logged' | 'duplicate' | 'error' }
+    const [loggedTrades, setLoggedTrades] = useState({});
 
     // Toast state
     const [toast, setToast] = useState(null);
@@ -144,6 +147,111 @@ export default function Scanner({ onSymbolClick, scanResults, setScanResults, sc
         exportScannerPdf(processedResults, { strategy: strategyLabel, scanTime });
     }, [processedResults, selectedStrategy, scanTime]);
 
+    // Shared: build payload for a single row
+    const buildLogPayload = useCallback((row) => {
+        const sym = row.symbol;
+        const cached = analysisCache?.current?.[sym];
+        if (!cached) return null;
+        const rec = cached.recommendation || {};
+        const price = cached.price;
+        if (rec.short_strike == null || rec.estimated_credit == null) return null;
+
+        const topStrategy = (rec.top_strategy || row.strategy || '').toLowerCase().replace(/ /g, '_');
+        const matchingSignal = (cached.strategies || []).find(s => s.strategy === topStrategy);
+
+        return {
+            payload: {
+                symbol: sym,
+                strategy: rec.top_strategy || row.strategy,
+                score: rec.top_score || row.score,
+                short_strike: rec.short_strike,
+                long_strike: rec.long_strike,
+                spread_width: rec.spread_width,
+                est_credit: rec.estimated_credit,
+                expiration: rec.expiration,
+                dte: rec.dte,
+                price_at_log: price,
+                stability_at_log: row.stability || null,
+                liquidity_tier: rec.liquidity_tier || null,
+                trade_context: {
+                    signal: matchingSignal ? {
+                        score: matchingSignal.score,
+                        strength: matchingSignal.strength,
+                        reason: matchingSignal.reason,
+                        details: matchingSignal.details,
+                    } : null,
+                    all_strategies: (cached.strategies || []).map(s => ({
+                        strategy: s.strategy, score: s.score, strength: s.strength,
+                    })),
+                    iv: cached.iv || null,
+                    levels: cached.levels || null,
+                    recommendation: {
+                        quality: rec.quality,
+                        quality_score: rec.quality_score,
+                        data_source: rec.data_source,
+                        risk_reward_ratio: rec.risk_reward_ratio,
+                        prob_profit: rec.prob_profit,
+                        otm_pct: rec.otm_pct,
+                    },
+                    earnings_date: cached.earnings_date || null,
+                    days_to_earnings: cached.days_to_earnings || null,
+                    falling_knife: cached.falling_knife || null,
+                    scanner: {
+                        win_rate: row.winRate,
+                        stability: row.stability,
+                        sector: row.sector,
+                        rank: row.rank,
+                    },
+                },
+            },
+        };
+    }, [analysisCache]);
+
+    const handleLogTrade = useCallback(async (e, row) => {
+        e.stopPropagation();
+        const sym = row.symbol;
+        if (loggedTrades[sym]) return;
+
+        const built = buildLogPayload(row);
+        if (!built) return;
+
+        try {
+            const result = await logShadowTrade(built.payload);
+            setLoggedTrades(prev => ({ ...prev, [sym]: result.status }));
+        } catch {
+            setLoggedTrades(prev => ({ ...prev, [sym]: 'error' }));
+        }
+    }, [loggedTrades, buildLogPayload]);
+
+    const [isLoggingAll, setIsLoggingAll] = useState(false);
+
+    const handleLogAll = useCallback(async () => {
+        if (!processedResults || isLoggingAll) return;
+
+        // Only rows with loaded analysis that haven't been logged yet
+        const eligible = processedResults.filter(
+            r => r.credit != null && !loggedTrades[r.symbol] && buildLogPayload(r)
+        );
+        if (eligible.length === 0) return;
+
+        setIsLoggingAll(true);
+        const batchResults = {};
+
+        for (const row of eligible) {
+            const built = buildLogPayload(row);
+            if (!built) { batchResults[row.symbol] = 'error'; continue; }
+            try {
+                const result = await logShadowTrade(built.payload);
+                batchResults[row.symbol] = result.status;
+            } catch {
+                batchResults[row.symbol] = 'error';
+            }
+        }
+
+        setLoggedTrades(prev => ({ ...prev, ...batchResults }));
+        setIsLoggingAll(false);
+    }, [processedResults, loggedTrades, isLoggingAll, buildLogPayload]);
+
     const [demoMode, setDemoMode] = useState(false);
 
     const handleScan = async () => {
@@ -151,6 +259,7 @@ export default function Scanner({ onSymbolClick, scanResults, setScanResults, sc
         setToast(null);
         setDemoMode(false);
         setPrefetchProgress(null);
+        setLoggedTrades({});
         setFilters({ symbol: '', sector: '', strategy: '', signal: '', quality: '' });
         const t0 = performance.now();
         try {
@@ -207,6 +316,7 @@ export default function Scanner({ onSymbolClick, scanResults, setScanResults, sc
     const hasActiveFilters = filters.symbol || filters.sector || filters.strategy || filters.signal || filters.quality;
     const totalCount = results ? results.length : 0;
     const shownCount = processedResults ? processedResults.length : 0;
+    const eligibleForLog = processedResults ? processedResults.filter(r => r.credit != null && !loggedTrades[r.symbol]).length : 0;
 
     return (
         <>
@@ -283,6 +393,9 @@ export default function Scanner({ onSymbolClick, scanResults, setScanResults, sc
                         <span style={{ fontSize: 12, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 8 }}>
                             <button className="btn btn-secondary" onClick={handleExportPdf} disabled={!processedResults || processedResults.length === 0} style={{ padding: '4px 10px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                                 <Download size={12} /> PDF
+                            </button>
+                            <button className="btn btn-secondary" onClick={handleLogAll} disabled={eligibleForLog === 0 || isLoggingAll} style={{ padding: '4px 10px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                {isLoggingAll ? (<><div className="spinner" style={{ width: 10, height: 10, borderWidth: 1.5 }} /> Logging...</>) : (<><BookmarkPlus size={12} /> Log All ({eligibleForLog})</>)}
                             </button>
                             {results === null
                                 ? '0 candidates'
@@ -418,7 +531,29 @@ export default function Scanner({ onSymbolClick, scanResults, setScanResults, sc
                                                     {r.riskReward != null ? `${(r.riskReward * 100).toFixed(0)}%` : r.tradeQuality != null ? '—' : <div className="spinner" style={{ width: 10, height: 10, borderWidth: 1.5 }} />}
                                                 </td>
                                                 <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{r.sector}</td>
-                                                <td><ExternalLink size={14} style={{ color: 'var(--text-muted)', opacity: 0.5 }} /></td>
+                                                <td style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                    {r.credit != null && (
+                                                        loggedTrades[r.symbol] === 'logged' ? (
+                                                            <Check size={14} style={{ color: 'var(--green)' }} title="Logged" />
+                                                        ) : loggedTrades[r.symbol] === 'duplicate' ? (
+                                                            <span style={{ fontSize: 10, color: 'var(--amber)' }} title="Already logged today">dup</span>
+                                                        ) : loggedTrades[r.symbol] === 'rejected' ? (
+                                                            <span style={{ fontSize: 10, color: 'var(--red)' }} title="Not tradeable">rej</span>
+                                                        ) : loggedTrades[r.symbol] === 'error' ? (
+                                                            <span style={{ fontSize: 10, color: 'var(--red)' }} title="Logging failed">err</span>
+                                                        ) : (
+                                                            <button
+                                                                className="btn-icon"
+                                                                title="Log shadow trade"
+                                                                onClick={(e) => handleLogTrade(e, r)}
+                                                                style={{ padding: 2, background: 'none', border: 'none', cursor: 'pointer' }}
+                                                            >
+                                                                <BookmarkPlus size={14} style={{ color: 'var(--text-muted)' }} />
+                                                            </button>
+                                                        )
+                                                    )}
+                                                    <ExternalLink size={14} style={{ color: 'var(--text-muted)', opacity: 0.5 }} />
+                                                </td>
                                             </tr>
                                         ))}
                                     </tbody>

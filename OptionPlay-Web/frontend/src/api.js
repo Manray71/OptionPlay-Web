@@ -100,6 +100,17 @@ export async function fetchMarketNewsJson(count = 5) {
     return res.json();
 }
 
+// Shadow Trade Logging
+export async function logShadowTrade(tradeData) {
+    const res = await fetch(`${API_BASE}/json/shadow-log`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(tradeData),
+    });
+    if (!res.ok) throw new Error('Failed to log shadow trade');
+    return res.json();
+}
+
 // Admin API
 export async function fetchConfigFiles() {
     const res = await fetch(`${API_BASE}/admin/files`);
