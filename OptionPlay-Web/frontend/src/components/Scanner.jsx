@@ -260,6 +260,8 @@ export default function Scanner({ onSymbolClick, scanResults, setScanResults, sc
         setDemoMode(false);
         setPrefetchProgress(null);
         setLoggedTrades({});
+        // Clear stale analysis cache so all symbols get fresh data
+        if (analysisCache?.current) analysisCache.current = {};
         setFilters({ symbol: '', sector: '', strategy: '', signal: '', quality: '' });
         const t0 = performance.now();
         try {
