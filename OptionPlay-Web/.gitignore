@@ -1,8 +1,38 @@
+# Dependencies
 node_modules/
+
+# Python
 __pycache__/
 *.pyc
-.DS_Store
-.vite/
+*.pyo
+.ruff_cache/
+
+# Build output
 dist/
+.vite/
+
+# Environment & Secrets
 .env
+.env.local
+.env.*.local
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Virtual environments
 venv/
+.venv/
+
+# Session / working files
+plan.md
+*.log
+
+# Claude Code
+.claude/
