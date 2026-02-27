@@ -313,9 +313,7 @@ export default function Scanner({ onSymbolClick, scanResults, setScanResults, sc
         return () => clearTimeout(id);
     }, [toast]);
 
-    const today = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
     const hasMarketClosed = results && results.some(r => r.marketClosed);
-    const hasActiveFilters = filters.symbol || filters.sector || filters.strategy || filters.signal || filters.quality;
     const totalCount = results ? results.length : 0;
     const shownCount = processedResults ? processedResults.length : 0;
     const eligibleForLog = processedResults ? processedResults.filter(r => r.credit != null && !loggedTrades[r.symbol]).length : 0;

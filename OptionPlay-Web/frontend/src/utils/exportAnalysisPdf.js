@@ -77,15 +77,6 @@ export function exportAnalysisPdf(result) {
         y += ROW_H;
     };
 
-    // Section title at arbitrary x (for right-column sub-headings)
-    const subTitle = (title, x) => {
-        doc.setFontSize(7);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(...INDIGO);
-        doc.text(title, x, y);
-        y += ROW_H;
-    };
-
     const row = () => { y += ROW_H; };
 
     // ════════════════════════════════════════════════════════
@@ -212,8 +203,6 @@ export function exportAnalysisPdf(result) {
             doc.setTextColor(...INDIGO);
             doc.text('Trade Recommendation', R[0], sectionTitleY);
         }
-        const tableStartY = y;
-
         const res = (levels.resistances || []).slice(0, 3);
         const sup = (levels.supports || []).slice(0, 4);
         const srData = [];

@@ -22,7 +22,6 @@ const ROW_H = 3.5;
 const MID_X = MG + CW / 2;
 
 const G = [MG, MG + COL, MG + COL * 2, MG + COL * 3, MG + COL * 4];
-const L = [MG, MG + 30, MG + 60];
 const R = [MID_X + 2, MID_X + 32, MID_X + 62];
 
 export function exportDashboardPdf(data) {
@@ -86,7 +85,6 @@ export function exportDashboardPdf(data) {
 
     // VIX on right
     if (vix != null) {
-        const vc = vix > 25 ? RED : vix > 20 ? AMBER : vix > 15 ? MID : GREEN;
         doc.setFontSize(12);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(...WHITE);

@@ -10,7 +10,6 @@ import {
     Newspaper,
     ChevronDown,
     Info,
-    ExternalLink,
     Minus,
     RefreshCw,
     Download,

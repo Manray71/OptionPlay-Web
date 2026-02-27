@@ -288,7 +288,6 @@ export default function Portfolio() {
     const closed = typeFilter === 'all' ? allClosed : allClosed.filter(p => p.type === typeFilter);
 
     const totalCredit = allOpen.filter(p => isCredit(p)).reduce((sum, p) => sum + (p.credit ?? 0) * 100 * p.qty, 0);
-    const totalDebit = allOpen.filter(p => !isCredit(p)).reduce((sum, p) => sum + (p.debit ?? 0) * 100 * p.qty, 0);
     const totalMaxProfit = allOpen.reduce((sum, p) => sum + (p.maxProfit ?? (p.credit ?? 0) * 100 * p.qty), 0);
     const totalMaxLoss = allOpen.reduce((sum, p) => sum + (p.maxLoss ?? maxRisk(p)), 0);
 
