@@ -13,7 +13,9 @@ import {
     ExternalLink,
     Minus,
     RefreshCw,
+    Download,
 } from 'lucide-react';
+import { exportDashboardPdf } from '../utils/exportDashboardPdf';
 import {
     fetchVixJson,
     fetchQuotesJson,
@@ -301,6 +303,15 @@ export default function Dashboard({ onSymbolClick }) {
                     >
                         <RefreshCw size={13} className={refreshing ? 'spin' : ''} />
                         {refreshing ? 'Refreshing...' : 'Refresh'}
+                    </button>
+                    <button
+                        className="btn btn-secondary"
+                        onClick={() => exportDashboardPdf({ vix, regime, market, events, sectors, earnings, news, cacheTime })}
+                        disabled={loading}
+                        style={{ padding: '6px 12px', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}
+                    >
+                        <Download size={13} />
+                        PDF
                     </button>
                 </div>
             </div>

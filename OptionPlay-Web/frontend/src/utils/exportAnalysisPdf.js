@@ -226,6 +226,7 @@ export function exportAnalysisPdf(result) {
         });
 
         const halfW = CW / 2 - 2;
+        let bodyStartY = y;
         autoTable(doc, {
             startY: y,
             head: [['', 'Price', 'Dist', 'Type', 'Str', 'Tch']],
@@ -252,12 +253,18 @@ export function exportAnalysisPdf(result) {
                     else if (lbl.startsWith('S')) data.cell.styles.textColor = GREEN;
                 }
             },
+            didDrawCell: (data) => {
+                // Capture Y of first body row to align Trade Rec
+                if (data.section === 'body' && data.row.index === 0 && data.column.index === 0) {
+                    bodyStartY = data.cell.y + 1 + data.cell.height / 2;
+                }
+            },
         });
         const tableBottomY = doc.lastAutoTable.finalY;
 
         // ── Trade Recommendation — right half ──
         if (rec) {
-            y = tableStartY;
+            y = bodyStartY;
             // Row 1
             ikv('Strategy', rec.strategy || 'Bull-Put Spread', R[0], { w: 30 });
             ikv('Exp', rec.expiration || '—', R[1], { w: 30 });
