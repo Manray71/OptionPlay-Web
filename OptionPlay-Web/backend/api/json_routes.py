@@ -414,7 +414,23 @@ async def get_vix():
         vix = await server.handlers.vix.get_vix()
         if vix is None:
             return _error("VIX data unavailable")
-        return {"vix": round(vix, 2), "regime": _vix_regime(vix)}
+
+        # Fetch previous close for change calculation
+        vix_change = None
+        try:
+            import yfinance as yf
+            loop = asyncio.get_event_loop()
+            def _fetch_vix_prev_close():
+                t = yf.Ticker("^VIX")
+                return t.fast_info.previous_close
+            prev_close = await loop.run_in_executor(None, _fetch_vix_prev_close)
+            if prev_close:
+                vix_change = round(vix - prev_close, 2)
+                vix_change_pct = round((vix - prev_close) / prev_close * 100, 2)
+        except Exception:
+            pass
+
+        return {"vix": round(vix, 2), "regime": _vix_regime(vix), "change": vix_change, "change_pct": vix_change_pct if vix_change is not None else None}
     except Exception as e:
         return _error(str(e))
 

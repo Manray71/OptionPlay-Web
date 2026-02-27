@@ -3,8 +3,6 @@ import {
     Activity,
     TrendingUp,
     TrendingDown,
-    Gauge,
-    Shield,
     Calendar,
     BarChart3,
     Newspaper,
@@ -65,39 +63,31 @@ function CollapsibleHeader({ icon, title, right, collapsed, onToggle }) {
 }
 
 // ──────────────────────────────────────────────────────────
-// VIX Gauge (kept from original)
+// VIX Gauge (inline SVG for stat card)
 // ──────────────────────────────────────────────────────────
 
-function VixGauge({ value, regime }) {
+function VixGauge({ value }) {
     const maxVix = 40;
     const angle = Math.min((value / maxVix) * 180, 180);
     const needleX = 110 + 80 * Math.cos((Math.PI * (180 - angle)) / 180);
     const needleY = 100 - 80 * Math.sin((Math.PI * (180 - angle)) / 180);
 
     let color = 'var(--green)';
-    let regimeClass = 'regime-low';
-    if (value > 25) { color = 'var(--red)'; regimeClass = 'regime-high'; }
-    else if (value > 20) { color = 'var(--amber)'; regimeClass = 'regime-elevated'; }
-    else if (value > 15) { color = 'var(--text-accent)'; regimeClass = 'regime-normal'; }
+    if (value > 25) color = 'var(--red)';
+    else if (value > 20) color = 'var(--amber)';
+    else if (value > 15) color = 'var(--text-accent)';
 
     return (
-        <div className="vix-gauge-container">
-            <div className="vix-gauge">
-                <svg viewBox="0 0 220 120">
-                    <path d="M 20 100 A 90 90 0 0 1 200 100" fill="none" stroke="rgba(71, 85, 105, 0.3)" strokeWidth="12" strokeLinecap="round" />
-                    <path d="M 20 100 A 90 90 0 0 1 65 30" fill="none" stroke="var(--green)" strokeWidth="12" strokeLinecap="round" opacity="0.6" />
-                    <path d="M 65 30 A 90 90 0 0 1 110 10" fill="none" stroke="#818cf8" strokeWidth="12" strokeLinecap="round" opacity="0.6" />
-                    <path d="M 110 10 A 90 90 0 0 1 155 30" fill="none" stroke="var(--amber)" strokeWidth="12" strokeLinecap="round" opacity="0.6" />
-                    <path d="M 155 30 A 90 90 0 0 1 200 100" fill="none" stroke="var(--red)" strokeWidth="12" strokeLinecap="round" opacity="0.6" />
-                    <line x1="110" y1="100" x2={needleX} y2={needleY} stroke={color} strokeWidth="2.5" strokeLinecap="round" />
-                    <circle cx="110" cy="100" r="5" fill={color} />
-                </svg>
-            </div>
-            <div className="vix-value" style={{ color }}>{value.toFixed(1)}</div>
-            <div className={`vix-regime ${regimeClass}`}>
-                <Shield size={12} style={{ verticalAlign: 'middle', marginRight: 4 }} />
-                {regime} Volatility
-            </div>
+        <div style={{ position: 'relative', width: '100%', maxWidth: 120, margin: '2px auto' }}>
+            <svg viewBox="0 0 220 110">
+                <path d="M 20 100 A 90 90 0 0 1 200 100" fill="none" stroke="rgba(71, 85, 105, 0.3)" strokeWidth="12" strokeLinecap="round" />
+                <path d="M 20 100 A 90 90 0 0 1 65 30" fill="none" stroke="var(--green)" strokeWidth="12" strokeLinecap="round" opacity="0.6" />
+                <path d="M 65 30 A 90 90 0 0 1 110 10" fill="none" stroke="#818cf8" strokeWidth="12" strokeLinecap="round" opacity="0.6" />
+                <path d="M 110 10 A 90 90 0 0 1 155 30" fill="none" stroke="var(--amber)" strokeWidth="12" strokeLinecap="round" opacity="0.6" />
+                <path d="M 155 30 A 90 90 0 0 1 200 100" fill="none" stroke="var(--red)" strokeWidth="12" strokeLinecap="round" opacity="0.6" />
+                <line x1="110" y1="100" x2={needleX} y2={needleY} stroke={color} strokeWidth="2.5" strokeLinecap="round" />
+                <circle cx="110" cy="100" r="5" fill={color} />
+            </svg>
         </div>
     );
 }
@@ -189,6 +179,8 @@ export default function Dashboard({ onSymbolClick }) {
     const [cacheTime, setCacheTime] = useState(null);
 
     const [vix, setVix] = useState(FALLBACK_VIX);
+    const [vixChange, setVixChange] = useState(null);
+    const [vixChangePct, setVixChangePct] = useState(null);
     const [regime, setRegime] = useState(FALLBACK_REGIME);
     const [market, setMarket] = useState(FALLBACK_MARKET);
     const [events, setEvents] = useState([]);
@@ -197,7 +189,7 @@ export default function Dashboard({ onSymbolClick }) {
     const [news, setNews] = useState([]);
 
     const applyData = useCallback((data) => {
-        if (data.vix != null) { setVix(data.vix); setRegime(data.regime); }
+        if (data.vix != null) { setVix(data.vix); setVixChange(data.vixChange ?? null); setVixChangePct(data.vixChangePct ?? null); setRegime(data.regime); }
         if (data.market?.length) setMarket(data.market);
         if (data.events) setEvents(data.events);
         if (data.sectors) setSectors(data.sectors);
@@ -222,6 +214,8 @@ export default function Dashboard({ onSymbolClick }) {
 
         if (results[0].status === 'fulfilled' && !results[0].value.error) {
             data.vix = results[0].value.vix;
+            data.vixChange = results[0].value.change;
+            data.vixChangePct = results[0].value.change_pct;
             data.regime = results[0].value.regime;
         } else { usedFallback = true; }
 
@@ -322,10 +316,13 @@ export default function Dashboard({ onSymbolClick }) {
                     <>
                         {/* ─── Top Stats Row ─── */}
                         <div className="grid-4 analysis-section fade-in">
-                            <div className="stat-card">
-                                <div className="stat-label">VIX</div>
-                                <div className="stat-value amber">{vix.toFixed(1)}</div>
-                                <div className="stat-change" style={{ color: 'var(--text-muted)' }}>{regime}</div>
+                            <div className="stat-card" style={{ textAlign: 'center' }}>
+                                <div className="stat-label">VIX — {regime}</div>
+                                <VixGauge value={vix} regime={regime} />
+                                <div className="stat-value" style={{ color: vix > 25 ? 'var(--red)' : vix > 20 ? 'var(--amber)' : vix > 15 ? 'var(--text-accent)' : 'var(--green)' }}>{vix.toFixed(1)}</div>
+                                <div className="stat-change" style={{ color: vixChange > 0 ? 'var(--red)' : vixChange < 0 ? 'var(--green)' : 'var(--text-muted)', fontWeight: 600 }}>
+                                    {vixChange != null ? `${vixChange >= 0 ? '+' : ''}${vixChange.toFixed(2)} (${vixChangePct >= 0 ? '+' : ''}${(vixChangePct ?? 0).toFixed(2)}%)` : '—'}
+                                </div>
                             </div>
                             <div className="stat-card">
                                 <div className="stat-label">SPY</div>
@@ -345,29 +342,24 @@ export default function Dashboard({ onSymbolClick }) {
                                     {fmtChg(qqq?.change_pct)}
                                 </div>
                             </div>
-                            <div className="stat-card">
-                                <div className="stat-label">Upcoming Events</div>
-                                <div className="stat-value indigo">{events.filter(e => e.days_away <= 14).length}</div>
-                                <div className="stat-change" style={{ color: 'var(--text-muted)' }}>next 14 days</div>
+                            <div className="stat-card" style={{ cursor: 'pointer' }} onClick={() => document.getElementById('upcoming-events-section')?.scrollIntoView({ behavior: 'smooth' })}>
+                                <div className="stat-label">Next 14 Days</div>
+                                <div style={{ display: 'flex', justifyContent: 'center', gap: 16, marginTop: 4 }}>
+                                    <div style={{ textAlign: 'center' }}>
+                                        <div className="stat-value indigo">{events.filter(e => e.days_away <= 14).length}</div>
+                                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Events</div>
+                                    </div>
+                                    <div style={{ textAlign: 'center' }}>
+                                        <div className="stat-value amber">{earnings.filter(e => e.days_away <= 14).length}</div>
+                                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Earnings</div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
-                        {/* ─── VIX Gauge + Market Indices ─── */}
-                        <div className="grid-2 analysis-section">
+                        {/* ─── Market Indices ─── */}
+                        <div className="analysis-section">
                             <div className="card fade-in" style={{ animationDelay: '0.05s' }}>
-                                <CollapsibleHeader
-                                    icon={<Gauge size={14} style={{ verticalAlign: 'middle' }} />}
-                                    title="VIX Gauge"
-                                    right={<span className="badge badge-indigo">Live</span>}
-                                    collapsed={collapsed.vixGauge}
-                                    onToggle={() => toggleSection('vixGauge')}
-                                />
-                                <div className={`card-body-collapsible${collapsed.vixGauge ? ' collapsed' : ''}`}>
-                                    <VixGauge value={vix} regime={regime} />
-                                </div>
-                            </div>
-
-                            <div className="card fade-in" style={{ animationDelay: '0.1s' }}>
                                 <CollapsibleHeader
                                     icon={<Activity size={14} style={{ verticalAlign: 'middle' }} />}
                                     title="Market Indices"
@@ -404,40 +396,79 @@ export default function Dashboard({ onSymbolClick }) {
                             </div>
                         </div>
 
-                        {/* ─── Upcoming Events ─── */}
-                        <div className="card fade-in analysis-section" style={{ animationDelay: '0.15s' }}>
+                        {/* ─── Upcoming Events & Earnings ─── */}
+                        <div id="upcoming-events-section" className="card fade-in analysis-section" style={{ animationDelay: '0.15s' }}>
                             <CollapsibleHeader
                                 icon={<Calendar size={14} style={{ verticalAlign: 'middle' }} />}
-                                title="Upcoming Events"
-                                right={<span className="badge badge-indigo">{events.length} events</span>}
+                                title="Upcoming Events & Earnings"
+                                right={<span className="badge badge-indigo">{events.length + earnings.length}</span>}
                                 collapsed={collapsed.events}
                                 onToggle={() => toggleSection('events')}
                             />
                             <div className={`card-body-collapsible${collapsed.events ? ' collapsed' : ''}`}>
-                                {events.length === 0 ? (
+                                {/* Economic Events */}
+                                {events.length > 0 && (
+                                    <>
+                                        <div style={{ padding: '8px 12px 4px', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Economic Events</div>
+                                        <div style={{ overflowX: 'auto' }}>
+                                            <table className="data-table">
+                                                <thead>
+                                                    <tr><th>Date</th><th>Days</th><th>Event</th><th>Description</th><th>Impact</th></tr>
+                                                </thead>
+                                                <tbody>
+                                                    {events.map((ev, i) => (
+                                                        <tr key={i}>
+                                                            <td style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, whiteSpace: 'nowrap' }}>{ev.date}</td>
+                                                            <td style={{ fontWeight: 600, color: ev.days_away <= 3 ? 'var(--red)' : ev.days_away <= 7 ? 'var(--amber)' : 'var(--text-secondary)' }}>
+                                                                {ev.days_away}d
+                                                            </td>
+                                                            <td style={{ fontWeight: 600 }}>{ev.name}</td>
+                                                            <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>{ev.description}</td>
+                                                            <td><ImpactBadge impact={ev.impact} /></td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </>
+                                )}
+
+                                {/* Earnings Calendar */}
+                                {earnings.length > 0 && (
+                                    <>
+                                        <div style={{ padding: '8px 12px 4px', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', borderTop: events.length > 0 ? '1px solid var(--border)' : 'none', marginTop: events.length > 0 ? 8 : 0 }}>Earnings Calendar</div>
+                                        <div style={{ overflowX: 'auto' }}>
+                                            <table className="data-table">
+                                                <thead>
+                                                    <tr><th>Symbol</th><th>Date</th><th>Days</th><th>Status</th></tr>
+                                                </thead>
+                                                <tbody>
+                                                    {earnings.map((e, i) => {
+                                                        const statusCls = e.status === 'safe' ? 'badge-green' : e.status === 'caution' ? 'badge-amber' : 'badge-red';
+                                                        return (
+                                                            <tr
+                                                                key={i}
+                                                                onClick={() => onSymbolClick?.(e.symbol)}
+                                                                className="clickable-row"
+                                                            >
+                                                                <td className="symbol">{e.symbol}</td>
+                                                                <td style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>{e.date}</td>
+                                                                <td style={{ fontWeight: 600, color: e.days_away <= 14 ? 'var(--red)' : e.days_away <= 45 ? 'var(--amber)' : 'var(--text-secondary)' }}>
+                                                                    {e.days_away}d
+                                                                </td>
+                                                                <td><span className={`badge ${statusCls}`} style={{ fontSize: 10 }}>{e.status}</span></td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </>
+                                )}
+
+                                {events.length === 0 && earnings.length === 0 && (
                                     <div className="card-body" style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>
-                                        No upcoming events
-                                    </div>
-                                ) : (
-                                    <div style={{ overflowX: 'auto' }}>
-                                        <table className="data-table">
-                                            <thead>
-                                                <tr><th>Date</th><th>Days</th><th>Event</th><th>Description</th><th>Impact</th></tr>
-                                            </thead>
-                                            <tbody>
-                                                {events.map((ev, i) => (
-                                                    <tr key={i}>
-                                                        <td style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, whiteSpace: 'nowrap' }}>{ev.date}</td>
-                                                        <td style={{ fontWeight: 600, color: ev.days_away <= 3 ? 'var(--red)' : ev.days_away <= 7 ? 'var(--amber)' : 'var(--text-secondary)' }}>
-                                                            {ev.days_away}d
-                                                        </td>
-                                                        <td style={{ fontWeight: 600 }}>{ev.name}</td>
-                                                        <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>{ev.description}</td>
-                                                        <td><ImpactBadge impact={ev.impact} /></td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
+                                        No upcoming events or earnings
                                     </div>
                                 )}
                             </div>
@@ -488,53 +519,9 @@ export default function Dashboard({ onSymbolClick }) {
                             </div>
                         </div>
 
-                        {/* ─── Earnings Calendar + Top News ─── */}
-                        <div className="grid-2 analysis-section">
+                        {/* ─── Top News ─── */}
+                        <div className="analysis-section">
                             <div className="card fade-in" style={{ animationDelay: '0.25s' }}>
-                                <CollapsibleHeader
-                                    icon={<Calendar size={14} style={{ verticalAlign: 'middle' }} />}
-                                    title="Upcoming Earnings"
-                                    right={<span className="badge badge-indigo">{earnings.length}</span>}
-                                    collapsed={collapsed.earnings}
-                                    onToggle={() => toggleSection('earnings')}
-                                />
-                                <div className={`card-body-collapsible${collapsed.earnings ? ' collapsed' : ''}`}>
-                                    {earnings.length === 0 ? (
-                                        <div className="card-body" style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>
-                                            No upcoming earnings from watchlist
-                                        </div>
-                                    ) : (
-                                        <div style={{ overflowX: 'auto' }}>
-                                            <table className="data-table">
-                                                <thead>
-                                                    <tr><th>Symbol</th><th>Date</th><th>Days</th><th>Status</th></tr>
-                                                </thead>
-                                                <tbody>
-                                                    {earnings.map((e, i) => {
-                                                        const statusCls = e.status === 'safe' ? 'badge-green' : e.status === 'caution' ? 'badge-amber' : 'badge-red';
-                                                        return (
-                                                            <tr
-                                                                key={i}
-                                                                onClick={() => onSymbolClick?.(e.symbol)}
-                                                                className="clickable-row"
-                                                            >
-                                                                <td className="symbol">{e.symbol}</td>
-                                                                <td style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>{e.date}</td>
-                                                                <td style={{ fontWeight: 600, color: e.days_away <= 14 ? 'var(--red)' : e.days_away <= 45 ? 'var(--amber)' : 'var(--text-secondary)' }}>
-                                                                    {e.days_away}d
-                                                                </td>
-                                                                <td><span className={`badge ${statusCls}`} style={{ fontSize: 10 }}>{e.status}</span></td>
-                                                            </tr>
-                                                        );
-                                                    })}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-
-                            <div className="card fade-in" style={{ animationDelay: '0.3s' }}>
                                 <CollapsibleHeader
                                     icon={<Newspaper size={14} style={{ verticalAlign: 'middle' }} />}
                                     title="Top News"
