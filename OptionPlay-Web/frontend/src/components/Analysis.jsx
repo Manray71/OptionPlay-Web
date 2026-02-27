@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { Search, BarChart3, Zap, Newspaper, Users, Target, Activity, ChevronDown, Info, TrendingUp } from 'lucide-react';
+import { Search, BarChart3, Zap, Newspaper, Users, Target, Activity, ChevronDown, Info, TrendingUp, Download } from 'lucide-react';
 import { fetchAnalysisJson } from '../api';
+import { exportAnalysisPdf } from '../utils/exportAnalysisPdf';
 
 // ──────────────────────────────────────────────────────────
 // Mock data generator
@@ -82,6 +83,50 @@ function generateMockAnalysis(sym) {
     };
 }
 
+// ── Extract best display value from a score component ──
+
+function _componentDisplay(key, val) {
+    if (typeof val !== 'object') return null;
+    // Per-component display value extraction
+    switch (key) {
+        case 'rsi':          return val.value != null ? `${Number(val.value).toFixed(1)}` : null;
+        case 'rsi_divergence': return val.type || null;
+        case 'support':      return val.distance_pct != null ? `${Number(val.distance_pct).toFixed(1)}%` : null;
+        case 'fibonacci':    return val.level != null ? `${val.level}` : null;
+        case 'moving_averages': return val.reason || null;
+        case 'trend_strength': return val.alignment || null;
+        case 'volume':       return val.ratio != null ? `${Number(val.ratio).toFixed(1)}x` : null;
+        case 'macd':         return val.signal || (val.histogram != null ? `${Number(val.histogram).toFixed(3)}` : null);
+        case 'stochastic': {
+            if (val.k == null) return null;
+            const k = Number(val.k), d = Number(val.d);
+            const sl = k < 20 ? 'oversold' : k > 80 ? 'overbought' : k > d ? 'bullish' : k < d ? 'bearish' : 'neutral';
+            return `${sl} (${k.toFixed(0)}/${d.toFixed(0)})`;
+        }
+        case 'keltner':      return val.position || (val.percent != null ? `${(Number(val.percent) * 100).toFixed(0)}%` : null);
+        case 'vwap':         return val.distance_pct != null ? `${Number(val.distance_pct).toFixed(1)}%` : null;
+        case 'market_context': return val.spy_trend || null;
+        case 'sector':       return val.name || null;
+        case 'candlestick':  return val.pattern || null;
+        case 'gap':          return val.size_pct != null ? `${Number(val.size_pct).toFixed(1)}%` : null;
+        // Trend continuation components
+        case 'sma_alignment': return val.spread_pct != null ? `${Number(val.spread_pct).toFixed(1)}% spread` : null;
+        case 'trend_stability': return val.closes_below_sma50 != null ? `${val.closes_below_sma50} closes < SMA50` : null;
+        case 'trend_buffer': return val.buffer_to_sma50_pct != null ? `${Number(val.buffer_to_sma50_pct).toFixed(1)}% to SMA50` : null;
+        case 'momentum_health': return val.rsi != null ? `RSI ${Number(val.rsi).toFixed(1)}` : null;
+        case 'volatility':   return val.atr_pct != null ? `ATR ${(Number(val.atr_pct) * 100).toFixed(1)}%` : null;
+        // ATH breakout
+        case 'ath_breakout': return val.pct_above != null ? `${Number(val.pct_above).toFixed(1)}% above` : null;
+        // Earnings dip
+        case 'dip':          return val.dip_pct != null ? `${Number(val.dip_pct).toFixed(1)}% dip` : null;
+        case 'stabilization': return val.days_without_new_low != null ? `${val.days_without_new_low}d stable` : null;
+        case 'fundamental':  return val.was_in_uptrend != null ? (val.was_in_uptrend ? 'uptrend' : 'no uptrend') : null;
+        case 'overreaction': return val.rsi_value != null ? `RSI ${Number(val.rsi_value).toFixed(1)}` : null;
+        case 'trend':        return val.status || null;
+        default:             return val.reason || null;
+    }
+}
+
 // ── Map API response to component format ──
 
 function mapApiAnalysis(data, sym) {
@@ -95,7 +140,7 @@ function mapApiAnalysis(data, sym) {
         const components = {};
         for (const [key, val] of Object.entries(breakdown)) {
             const score = typeof val === 'object' ? (val.score ?? 0) : (typeof val === 'number' ? val : 0);
-            if (score > 0) components[key] = score;
+            if (score > 0) components[key] = { score, display: _componentDisplay(key, val) };
         }
         return {
             name: (s.strategy || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
@@ -173,8 +218,8 @@ function mapApiAnalysis(data, sym) {
             dte: rec.dte ?? mock.recommendation.dte,
             expiration: rec.expiration ?? mock.recommendation.expiration,
             creditEstimate: credit != null ? `$${credit.toFixed(2)}` : null,
-            maxRisk: maxLoss != null ? `$${maxLoss.toFixed(2)}` : null,
-            maxProfit: rec.max_profit != null ? `$${rec.max_profit.toFixed(2)}` : null,
+            maxRisk: maxLoss != null ? `$${Math.round(maxLoss).toLocaleString('de-DE')}` : null,
+            maxProfit: rec.max_profit != null ? `$${Math.round(rec.max_profit).toLocaleString('de-DE')}` : null,
             breakEven: rec.break_even,
             returnOnRisk: ror,
             quality: rec.quality ?? null,
@@ -208,9 +253,10 @@ function mapApiAnalysis(data, sym) {
         news: data.news?.length
             ? data.news.map(n => ({
                 title: n.title,
+                link: n.link || '',
                 source: n.publisher || 'Unknown',
                 time: n.date || '',
-                sentiment: 'neutral',
+                sentiment: n.sentiment || 'neutral',
             }))
             : mock.news,
         analysts: data.analysts && (data.analysts.total_ratings > 0 || data.analysts.target_median)
@@ -594,14 +640,17 @@ export default function Analysis({ initialSymbol, onSymbolConsumed, analysisCach
 
                     {/* Section anchor nav — only when results exist */}
                     {result && !loading && (
-                        <div className="analysis-anchor-nav">
-                            <div className="tabs">
+                        <div className="analysis-anchor-nav" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div className="tabs" style={{ flex: 1 }}>
                                 {SECTIONS.map(sec => (
                                     <button key={sec.id} className="tab" onClick={() => scrollToSection(sec.id)}>
                                         {sec.label}
                                     </button>
                                 ))}
                             </div>
+                            <button className="btn btn-secondary" onClick={() => exportAnalysisPdf(result)} style={{ padding: '4px 10px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
+                                <Download size={12} /> PDF
+                            </button>
                         </div>
                     )}
                 </div>
@@ -666,11 +715,16 @@ export default function Analysis({ initialSymbol, onSymbolConsumed, analysisCach
                                                         }} />
                                                     </div>
                                                     <div className="strategy-components">
-                                                        {Object.entries(s.components).map(([key, val]) => (
-                                                            <span key={key} className="strategy-component-chip">
-                                                                {key.replace(/_/g, ' ')}: <strong>{val.toFixed(1)}</strong>
-                                                            </span>
-                                                        ))}
+                                                        {Object.entries(s.components).map(([key, comp]) => {
+                                                            const isObj = typeof comp === 'object' && comp !== null;
+                                                            const score = isObj ? comp.score : comp;
+                                                            const display = isObj ? comp.display : null;
+                                                            return (
+                                                                <span key={key} className="strategy-component-chip" title={`Score: ${score.toFixed(1)}`}>
+                                                                    {key.replace(/_/g, ' ')}{display ? <>: <strong>{display}</strong></> : <> <strong>{score.toFixed(1)}</strong></>}
+                                                                </span>
+                                                            );
+                                                        })}
                                                     </div>
                                                 </div>
                                             ))}
@@ -853,12 +907,18 @@ export default function Analysis({ initialSymbol, onSymbolConsumed, analysisCach
                                                             MACD: <strong>{result.momentum.macdSignal}</strong>
                                                         </span>
                                                     )}
-                                                    {result.momentum.stochSignal && (
-                                                        <span className="strategy-component-chip">
-                                                            Stoch: <strong>{result.momentum.stochSignal}</strong>
-                                                            {result.momentum.stochK != null && <> ({result.momentum.stochK.toFixed(0)})</>}
-                                                        </span>
-                                                    )}
+                                                    {(result.momentum.stochSignal || result.momentum.stochK != null) && (() => {
+                                                        const k = result.momentum.stochK;
+                                                        const d = result.momentum.stochD;
+                                                        const label = result.momentum.stochSignal
+                                                            || (k < 20 ? 'oversold' : k > 80 ? 'overbought' : k > d ? 'bullish' : k < d ? 'bearish' : 'neutral');
+                                                        const detail = k != null ? ` (${k.toFixed(0)}/${d?.toFixed(0)})` : '';
+                                                        return (
+                                                            <span className="strategy-component-chip">
+                                                                Stoch: <strong>{label}{detail}</strong>
+                                                            </span>
+                                                        );
+                                                    })()}
                                                     {result.momentum.marketTrend && (
                                                         <span className="strategy-component-chip">
                                                             SPY: <strong>{result.momentum.marketTrend.replace(/_/g, ' ')}</strong>
@@ -978,7 +1038,7 @@ export default function Analysis({ initialSymbol, onSymbolConsumed, analysisCach
                                                 <div key={i} className="news-item">
                                                     <div className={`news-sentiment ${item.sentiment}`} />
                                                     <div className="news-content">
-                                                        <div className="news-title">{item.title}</div>
+                                                        <div className="news-title">{item.link ? <a href={item.link} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>{item.title}</a> : item.title}</div>
                                                         <div className="news-meta">
                                                             <span>{item.source}</span>
                                                             <span>•</span>

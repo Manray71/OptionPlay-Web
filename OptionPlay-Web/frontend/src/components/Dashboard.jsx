@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
     Activity,
     TrendingUp,
@@ -12,6 +12,7 @@ import {
     Info,
     ExternalLink,
     Minus,
+    RefreshCw,
 } from 'lucide-react';
 import {
     fetchVixJson,
@@ -159,10 +160,32 @@ function RegimeBadge({ regime }) {
 // Main Component
 // ──────────────────────────────────────────────────────────
 
+// ── Cache helpers ──
+const CACHE_KEY = 'optionplay_dashboard_cache';
+const CACHE_TTL = 60 * 60 * 1000; // 1 hour
+
+function readCache() {
+    try {
+        const raw = localStorage.getItem(CACHE_KEY);
+        if (!raw) return null;
+        const cached = JSON.parse(raw);
+        if (Date.now() - cached.ts > CACHE_TTL) return null;
+        return cached;
+    } catch { return null; }
+}
+
+function writeCache(data) {
+    try {
+        localStorage.setItem(CACHE_KEY, JSON.stringify({ ...data, ts: Date.now() }));
+    } catch { /* quota exceeded — ignore */ }
+}
+
 export default function Dashboard({ onSymbolClick }) {
     const [loading, setLoading] = useState(true);
     const [collapsed, setCollapsed] = useState({});
     const [demoMode, setDemoMode] = useState(false);
+    const [refreshing, setRefreshing] = useState(false);
+    const [cacheTime, setCacheTime] = useState(null);
 
     const [vix, setVix] = useState(FALLBACK_VIX);
     const [regime, setRegime] = useState(FALLBACK_REGIME);
@@ -172,62 +195,79 @@ export default function Dashboard({ onSymbolClick }) {
     const [earnings, setEarnings] = useState([]);
     const [news, setNews] = useState([]);
 
+    const applyData = useCallback((data) => {
+        if (data.vix != null) { setVix(data.vix); setRegime(data.regime); }
+        if (data.market?.length) setMarket(data.market);
+        if (data.events) setEvents(data.events);
+        if (data.sectors) setSectors(data.sectors);
+        if (data.earnings) setEarnings(data.earnings);
+        if (data.news) setNews(data.news);
+        setDemoMode(data.demoMode || false);
+        setCacheTime(data.ts || Date.now());
+    }, []);
+
+    const fetchFresh = useCallback(async () => {
+        const results = await Promise.allSettled([
+            fetchVixJson(),
+            fetchQuotesJson(MARKET_SYMBOLS),
+            fetchEventsJson(30),
+            fetchSectorsJson(),
+            fetchEarningsCalendarJson(8),
+            fetchMarketNewsJson(5),
+        ]);
+
+        let usedFallback = false;
+        const data = { ts: Date.now(), demoMode: false };
+
+        if (results[0].status === 'fulfilled' && !results[0].value.error) {
+            data.vix = results[0].value.vix;
+            data.regime = results[0].value.regime;
+        } else { usedFallback = true; }
+
+        if (results[1].status === 'fulfilled' && results[1].value.quotes?.length) {
+            data.market = results[1].value.quotes;
+        } else { usedFallback = true; }
+
+        if (results[2].status === 'fulfilled' && results[2].value.events) data.events = results[2].value.events;
+        if (results[3].status === 'fulfilled' && results[3].value.sectors) data.sectors = results[3].value.sectors;
+        if (results[4].status === 'fulfilled' && results[4].value.earnings) data.earnings = results[4].value.earnings;
+        if (results[5].status === 'fulfilled' && results[5].value.news) data.news = results[5].value.news;
+
+        data.demoMode = usedFallback;
+        writeCache(data);
+        applyData(data);
+        return data;
+    }, [applyData]);
+
     useEffect(() => {
         let cancelled = false;
-        async function loadData() {
-            const results = await Promise.allSettled([
-                fetchVixJson(),
-                fetchQuotesJson(MARKET_SYMBOLS),
-                fetchEventsJson(30),
-                fetchSectorsJson(),
-                fetchEarningsCalendarJson(5),
-                fetchMarketNewsJson(5),
-            ]);
-            if (cancelled) return;
-
-            let usedFallback = false;
-
-            // VIX
-            if (results[0].status === 'fulfilled' && !results[0].value.error) {
-                setVix(results[0].value.vix);
-                setRegime(results[0].value.regime);
-            } else { usedFallback = true; }
-
-            // Market quotes
-            if (results[1].status === 'fulfilled' && results[1].value.quotes?.length) {
-                setMarket(results[1].value.quotes);
-            } else { usedFallback = true; }
-
-            // Events
-            if (results[2].status === 'fulfilled' && results[2].value.events) {
-                setEvents(results[2].value.events);
+        async function init() {
+            // Try cache first
+            const cached = readCache();
+            if (cached) {
+                applyData(cached);
+                setLoading(false);
+                return;
             }
-
-            // Sectors
-            if (results[3].status === 'fulfilled' && results[3].value.sectors) {
-                setSectors(results[3].value.sectors);
-            }
-
-            // Earnings
-            if (results[4].status === 'fulfilled' && results[4].value.earnings) {
-                setEarnings(results[4].value.earnings);
-            }
-
-            // News
-            if (results[5].status === 'fulfilled' && results[5].value.news) {
-                setNews(results[5].value.news);
-            }
-
-            setDemoMode(usedFallback);
-            setLoading(false);
+            // No cache — fetch fresh
+            await fetchFresh();
+            if (!cancelled) setLoading(false);
         }
-        loadData();
+        init();
         return () => { cancelled = true; };
-    }, []);
+    }, [applyData, fetchFresh]);
+
+    const handleRefresh = async () => {
+        setRefreshing(true);
+        await fetchFresh();
+        setRefreshing(false);
+    };
 
     const toggleSection = (id) => setCollapsed(prev => ({ ...prev, [id]: !prev[id] }));
 
-    const lastUpdated = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const lastUpdated = cacheTime
+        ? new Date(cacheTime).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+        : '—';
 
     // Extract SPY + QQQ from market for stat cards
     const spy = market.find(m => m.symbol === 'SPY');
@@ -241,14 +281,28 @@ export default function Dashboard({ onSymbolClick }) {
 
     return (
         <>
-            <div className="page-header">
-                <h2>Market Overview</h2>
-                <p>Indices, volatility, events, sectors & earnings at a glance</p>
-                {demoMode && (
-                    <span style={{ fontSize: 11, color: 'var(--amber)', display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
-                        <Info size={12} /> Demo mode — some data is simulated
-                    </span>
-                )}
+            <div className="page-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                <div>
+                    <h2>Market Overview</h2>
+                    <p>Indices, volatility, events, sectors & earnings at a glance</p>
+                    {demoMode && (
+                        <span style={{ fontSize: 11, color: 'var(--amber)', display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
+                            <Info size={12} /> Demo mode — some data is simulated
+                        </span>
+                    )}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{lastUpdated}</span>
+                    <button
+                        className="btn btn-secondary"
+                        onClick={handleRefresh}
+                        disabled={refreshing || loading}
+                        style={{ padding: '6px 12px', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}
+                    >
+                        <RefreshCw size={13} className={refreshing ? 'spin' : ''} />
+                        {refreshing ? 'Refreshing...' : 'Refresh'}
+                    </button>
+                </div>
             </div>
 
             <div className="page-content">

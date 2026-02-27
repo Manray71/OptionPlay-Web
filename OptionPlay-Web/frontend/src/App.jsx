@@ -15,7 +15,7 @@ import Admin from './components/Admin';
 import { fetchAnalysisJson } from './api';
 
 const NAV_ITEMS = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'dashboard', label: 'Market Overview', icon: LayoutDashboard },
     { id: 'scanner', label: 'Scanner', icon: Search },
     { id: 'analysis', label: 'Analysis', icon: BarChart3 },
     { id: 'portfolio', label: 'Portfolio', icon: Briefcase },

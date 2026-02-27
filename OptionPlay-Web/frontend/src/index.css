@@ -995,6 +995,11 @@ body {
   line-height: 1.4;
 }
 
+.news-title a:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
 .news-meta {
   display: flex;
   align-items: center;
@@ -1793,7 +1798,7 @@ body {
   color: var(--text-muted);
 }
 
-.spinning {
+.spinning, .spin {
   animation: spin 1s linear infinite;
 }
 

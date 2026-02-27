@@ -9,6 +9,7 @@ import asyncio
 import os
 
 from .routes import get_server
+from .news_sentiment import enrich_news_sentiment
 
 router = APIRouter()
 
@@ -1043,7 +1044,7 @@ async def analyze_symbol(symbol: str):
             "iv": iv_data,
             "levels": levels,
             "recommendation": recommendation,
-            "news": news_data,
+            "news": enrich_news_sentiment(news_data),
             "analysts": analysts_data,
             "earnings_date": earnings_date,
             "days_to_earnings": days_to_earnings,
@@ -1061,7 +1062,7 @@ async def get_news(symbol: str, count: int = 5):
     try:
         ibkr_news = await _fetch_ibkr_news(symbol, days=5, count=count)
         if ibkr_news:
-            return {"symbol": symbol, "source": "ibkr", "news": ibkr_news}
+            return {"symbol": symbol, "source": "ibkr", "news": enrich_news_sentiment(ibkr_news)}
     except Exception:
         pass
 
@@ -1075,7 +1076,7 @@ async def get_news(symbol: str, count: int = 5):
         return {
             "symbol": symbol,
             "source": "yfinance",
-            "news": news or [],
+            "news": enrich_news_sentiment(news) or [],
         }
     except Exception as e:
         return _error(str(e))
@@ -1390,35 +1391,41 @@ async def get_earnings_calendar(count: int = 5):
                 pass
             return None
 
-        # Limit to 50 symbols to keep it fast
-        syms_to_check = watchlist[:50]
+        syms_to_check = watchlist
 
-        for sym in syms_to_check:
-            try:
-                raw = await loop.run_in_executor(None, _fetch_earnings_yf, sym)
-                if raw is None:
-                    continue
-                # Normalize to date
-                if isinstance(raw, date):
-                    e_date = raw
-                elif hasattr(raw, 'date'):
-                    e_date = raw.date() if callable(raw.date) else raw.date
-                elif isinstance(raw, str):
-                    e_date = datetime.strptime(raw[:10], "%Y-%m-%d").date()
-                else:
-                    continue
+        # Fetch earnings in parallel with concurrency limit
+        import asyncio as _aio
+        sem = _aio.Semaphore(10)
 
-                days_away = (e_date - today).days
-                if days_away >= 0:
-                    status = "safe" if days_away > 45 else "caution" if days_away > 14 else "danger"
-                    earnings_list.append({
-                        "symbol": sym,
-                        "date": e_date.isoformat(),
-                        "days_away": days_away,
-                        "status": status,
-                    })
-            except Exception:
-                continue
+        async def _check_sym(sym):
+            async with sem:
+                try:
+                    raw = await loop.run_in_executor(None, _fetch_earnings_yf, sym)
+                    if raw is None:
+                        return None
+                    if isinstance(raw, date):
+                        e_date = raw
+                    elif hasattr(raw, 'date'):
+                        e_date = raw.date() if callable(raw.date) else raw.date
+                    elif isinstance(raw, str):
+                        e_date = datetime.strptime(raw[:10], "%Y-%m-%d").date()
+                    else:
+                        return None
+                    days_away = (e_date - today).days
+                    if days_away >= 0:
+                        status = "safe" if days_away > 45 else "caution" if days_away > 14 else "danger"
+                        return {
+                            "symbol": sym,
+                            "date": e_date.isoformat(),
+                            "days_away": days_away,
+                            "status": status,
+                        }
+                except Exception:
+                    pass
+                return None
+
+        results = await _aio.gather(*[_check_sym(s) for s in syms_to_check])
+        earnings_list = [r for r in results if r is not None]
 
         # Sort by date, take nearest
         earnings_list.sort(key=lambda x: x["days_away"])
@@ -1586,7 +1593,7 @@ async def get_market_news(count: int = 5):
         try:
             ibkr_news = await _fetch_ibkr_news("SPY", days=3, count=count)
             if ibkr_news:
-                return {"news": ibkr_news, "source": "ibkr"}
+                return {"news": enrich_news_sentiment(ibkr_news), "source": "ibkr"}
         except Exception:
             pass
 
@@ -1595,6 +1602,6 @@ async def get_market_news(count: int = 5):
         from src.data_providers.yahoo_news import get_stock_news
 
         news = await loop.run_in_executor(None, get_stock_news, "SPY", count)
-        return {"news": news or [], "source": "yfinance"}
+        return {"news": enrich_news_sentiment(news) or [], "source": "yfinance"}
     except Exception as e:
         return _error(str(e))
