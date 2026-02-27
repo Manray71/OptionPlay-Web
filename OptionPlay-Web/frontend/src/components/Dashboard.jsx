@@ -299,7 +299,7 @@ export default function Dashboard({ onSymbolClick }) {
                     </button>
                     <button
                         className="btn btn-secondary"
-                        onClick={() => exportDashboardPdf({ vix, regime, market, events, sectors, earnings, news, cacheTime })}
+                        onClick={() => exportDashboardPdf({ vix, vixChange, vixChangePct, regime, market, events, sectors, earnings, news, cacheTime })}
                         disabled={loading}
                         style={{ padding: '6px 12px', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}
                     >

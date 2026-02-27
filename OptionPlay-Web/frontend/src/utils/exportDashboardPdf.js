@@ -3,6 +3,7 @@ import autoTable from 'jspdf-autotable';
 
 // ── Palette ──
 const INDIGO  = [30, 27, 75];
+const ACCENT  = [129, 140, 248];
 const WHITE   = [255, 255, 255];
 const GRAY    = [60, 60, 60];
 const MID     = [120, 120, 120];
@@ -24,9 +25,11 @@ const MID_X = MG + CW / 2;
 const G = [MG, MG + COL, MG + COL * 2, MG + COL * 3, MG + COL * 4];
 const R = [MID_X + 2, MID_X + 32, MID_X + 62];
 
+const vixColor = (v) => v > 25 ? RED : v > 20 ? AMBER : v > 15 ? ACCENT : GREEN;
+
 export function exportDashboardPdf(data) {
     if (!data) return;
-    const { vix, regime, market = [], events = [], sectors = [], earnings = [], news = [] } = data;
+    const { vix, vixChange, vixChangePct, regime, market = [], events = [], sectors = [], earnings = [], news = [] } = data;
 
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
     const now = new Date();
@@ -83,12 +86,17 @@ export function exportDashboardPdf(data) {
     doc.setFont('helvetica', 'normal');
     doc.text('Market Overview Report', MG, 13);
 
-    // VIX on right
+    // VIX on right with change
     if (vix != null) {
-        doc.setFontSize(12);
+        let vixStr = `VIX ${Number(vix).toFixed(1)}`;
+        if (vixChange != null) {
+            vixStr += `  ${vixChange >= 0 ? '+' : ''}${vixChange.toFixed(2)}`;
+            if (vixChangePct != null) vixStr += ` (${vixChangePct >= 0 ? '+' : ''}${vixChangePct.toFixed(2)}%)`;
+        }
+        doc.setFontSize(10);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(...WHITE);
-        doc.text(`VIX ${Number(vix).toFixed(1)}`, PW - MG, 8, { align: 'right' });
+        doc.text(vixStr, PW - MG, 8, { align: 'right' });
     }
     doc.setFontSize(7);
     doc.setFont('helvetica', 'normal');
@@ -100,13 +108,18 @@ export function exportDashboardPdf(data) {
     // 1. MARKET SNAPSHOT (key stats row)
     // ════════════════════════════════════════════════════════
     section('Market Snapshot');
-    const vc = vix > 25 ? RED : vix > 20 ? AMBER : vix > 15 ? GRAY : GREEN;
+    const vc = vixColor(vix);
     ikv('VIX', vix != null ? Number(vix).toFixed(1) : '—', G[0], { color: vc });
     ikv('Regime', regime || '—', G[1], { color: vc });
+    if (vixChange != null) {
+        const chgStr = `${vixChange >= 0 ? '+' : ''}${vixChange.toFixed(2)}${vixChangePct != null ? ` (${vixChangePct >= 0 ? '+' : ''}${vixChangePct.toFixed(2)}%)` : ''}`;
+        ikv('Change', chgStr, G[2], { color: vixChange > 0 ? RED : vixChange < 0 ? GREEN : GRAY });
+    }
+    row();
     const spy = market.find(m => m.symbol === 'SPY');
     const qqq = market.find(m => m.symbol === 'QQQ');
-    if (spy) ikv('SPY', `${fmtPrice(spy.price)} (${fmtChg(spy.change_pct)})`, G[2], { color: spy.change_pct >= 0 ? GREEN : RED });
-    if (qqq) ikv('QQQ', `${fmtPrice(qqq.price)} (${fmtChg(qqq.change_pct)})`, G[3], { color: qqq.change_pct >= 0 ? GREEN : RED });
+    if (spy) ikv('SPY', `${fmtPrice(spy.price)} (${fmtChg(spy.change_pct)})`, G[0], { color: spy.change_pct >= 0 ? GREEN : RED });
+    if (qqq) ikv('QQQ', `${fmtPrice(qqq.price)} (${fmtChg(qqq.change_pct)})`, G[2], { color: qqq.change_pct >= 0 ? GREEN : RED });
     row();
 
     // ════════════════════════════════════════════════════════
@@ -140,46 +153,101 @@ export function exportDashboardPdf(data) {
     y = doc.lastAutoTable.finalY + 1;
 
     // ════════════════════════════════════════════════════════
-    // 3. UPCOMING EVENTS
+    // 3. UPCOMING EVENTS & EARNINGS (merged)
     // ════════════════════════════════════════════════════════
-    if (events.length) {
-        section('Upcoming Events');
-        autoTable(doc, {
-            startY: y,
-            head: [['Date', 'Days', 'Event', 'Description', 'Impact']],
-            body: events.slice(0, 6).map(ev => [
-                ev.date, `${ev.days_away}d`, ev.name, ev.description || '', ev.impact || '',
-            ]),
-            theme: 'grid',
-            margin: { left: MG, right: MG },
-            tableWidth: CW,
-            headStyles: { fillColor: INDIGO, textColor: WHITE, fontStyle: 'bold', fontSize: 6, cellPadding: 1 },
-            bodyStyles: { fontSize: 5.5, cellPadding: 1 },
-            alternateRowStyles: { fillColor: ROW_ALT },
-            columnStyles: {
-                0: { cellWidth: 22 },
-                1: { cellWidth: 12, halign: 'center' },
-                2: { cellWidth: 40, fontStyle: 'bold' },
-                3: {},
-                4: { cellWidth: 18, halign: 'center' },
-            },
-            didParseCell: (data) => {
-                if (data.section === 'body') {
-                    if (data.column.index === 1) {
-                        const days = parseInt(data.cell.raw);
-                        data.cell.styles.fontStyle = 'bold';
-                        data.cell.styles.textColor = days <= 3 ? RED : days <= 7 ? AMBER : GRAY;
+    if (events.length || earnings.length) {
+        section('Upcoming Events & Earnings');
+
+        // Economic Events sub-table
+        if (events.length) {
+            doc.setFontSize(6);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(...MID);
+            doc.text('ECONOMIC EVENTS', MG, y);
+            y += 1;
+            autoTable(doc, {
+                startY: y,
+                head: [['Date', 'Days', 'Event', 'Description', 'Impact']],
+                body: events.slice(0, 6).map(ev => [
+                    ev.date, `${ev.days_away}d`, ev.name, ev.description || '', ev.impact || '',
+                ]),
+                theme: 'grid',
+                margin: { left: MG, right: MG },
+                tableWidth: CW,
+                headStyles: { fillColor: INDIGO, textColor: WHITE, fontStyle: 'bold', fontSize: 6, cellPadding: 1 },
+                bodyStyles: { fontSize: 5.5, cellPadding: 1 },
+                alternateRowStyles: { fillColor: ROW_ALT },
+                columnStyles: {
+                    0: { cellWidth: 22 },
+                    1: { cellWidth: 12, halign: 'center' },
+                    2: { cellWidth: 40, fontStyle: 'bold' },
+                    3: {},
+                    4: { cellWidth: 18, halign: 'center' },
+                },
+                didParseCell: (data) => {
+                    if (data.section === 'body') {
+                        if (data.column.index === 1) {
+                            const days = parseInt(data.cell.raw);
+                            data.cell.styles.fontStyle = 'bold';
+                            data.cell.styles.textColor = days <= 3 ? RED : days <= 7 ? AMBER : GRAY;
+                        }
+                        if (data.column.index === 4) {
+                            const impact = data.cell.raw;
+                            data.cell.styles.fontStyle = 'bold';
+                            data.cell.styles.textColor = (impact === 'HIGH' || impact === 'CRITICAL') ? RED
+                                : impact === 'MEDIUM' ? AMBER : MID;
+                        }
                     }
-                    if (data.column.index === 4) {
-                        const impact = data.cell.raw;
-                        data.cell.styles.fontStyle = 'bold';
-                        data.cell.styles.textColor = (impact === 'HIGH' || impact === 'CRITICAL') ? RED
-                            : impact === 'MEDIUM' ? AMBER : MID;
+                },
+            });
+            y = doc.lastAutoTable.finalY + 2;
+        }
+
+        // Earnings Calendar sub-table
+        if (earnings.length) {
+            doc.setFontSize(6);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(...MID);
+            doc.text('EARNINGS CALENDAR', MG, y);
+            y += 1;
+            autoTable(doc, {
+                startY: y,
+                head: [['Symbol', 'Date', 'Days', 'Status']],
+                body: earnings.slice(0, 8).map(e => [
+                    e.symbol,
+                    e.date,
+                    `${e.days_away}d`,
+                    e.status ? e.status.charAt(0).toUpperCase() + e.status.slice(1) : '—',
+                ]),
+                theme: 'grid',
+                margin: { left: MG, right: MG },
+                tableWidth: CW,
+                headStyles: { fillColor: INDIGO, textColor: WHITE, fontStyle: 'bold', fontSize: 6, cellPadding: 1 },
+                bodyStyles: { fontSize: 6, cellPadding: 1 },
+                alternateRowStyles: { fillColor: ROW_ALT },
+                columnStyles: {
+                    0: { fontStyle: 'bold', cellWidth: 25 },
+                    1: { cellWidth: 28 },
+                    2: { cellWidth: 18, halign: 'center' },
+                    3: { cellWidth: 22, halign: 'center' },
+                },
+                didParseCell: (data) => {
+                    if (data.section === 'body') {
+                        if (data.column.index === 2) {
+                            const days = parseInt(data.cell.raw);
+                            data.cell.styles.fontStyle = 'bold';
+                            data.cell.styles.textColor = days <= 14 ? RED : days <= 45 ? AMBER : GRAY;
+                        }
+                        if (data.column.index === 3) {
+                            const s = data.cell.raw.toLowerCase();
+                            data.cell.styles.fontStyle = 'bold';
+                            data.cell.styles.textColor = s === 'safe' ? GREEN : s === 'caution' ? AMBER : RED;
+                        }
                     }
-                }
-            },
-        });
-        y = doc.lastAutoTable.finalY + 1;
+                },
+            });
+            y = doc.lastAutoTable.finalY + 1;
+        }
     }
 
     // ════════════════════════════════════════════════════════
@@ -237,83 +305,26 @@ export function exportDashboardPdf(data) {
     }
 
     // ════════════════════════════════════════════════════════
-    // 5. EARNINGS (left) + NEWS (right) — side by side
+    // 5. TOP NEWS
     // ════════════════════════════════════════════════════════
-    if (earnings.length || news.length) {
-        section('Upcoming Earnings & News');
-        const blockStartY = y;
+    if (news.length) {
+        section('Top News');
+        news.slice(0, 5).forEach((item) => {
+            const sc = item.sentiment === 'positive' ? GREEN : item.sentiment === 'negative' ? RED : MID;
+            doc.setFillColor(...sc);
+            doc.circle(MG + 1, y - 0.8, 0.8, 'F');
 
-        // ── Left: Earnings table ──
-        if (earnings.length) {
-            const halfW = CW / 2 - 2;
-            autoTable(doc, {
-                startY: y,
-                head: [['Symbol', 'Date', 'Days', 'Status']],
-                body: earnings.slice(0, 8).map(e => [
-                    e.symbol,
-                    e.date,
-                    `${e.days_away}d`,
-                    e.status ? e.status.charAt(0).toUpperCase() + e.status.slice(1) : '—',
-                ]),
-                theme: 'grid',
-                margin: { left: MG, right: PW - MG - halfW },
-                tableWidth: halfW,
-                headStyles: { fillColor: INDIGO, textColor: WHITE, fontStyle: 'bold', fontSize: 6, cellPadding: 1 },
-                bodyStyles: { fontSize: 6, cellPadding: 1 },
-                alternateRowStyles: { fillColor: ROW_ALT },
-                columnStyles: {
-                    0: { fontStyle: 'bold', cellWidth: 20 },
-                    1: { cellWidth: 24 },
-                    2: { cellWidth: 14, halign: 'center' },
-                    3: { cellWidth: 18, halign: 'center' },
-                },
-                didParseCell: (data) => {
-                    if (data.section === 'body') {
-                        if (data.column.index === 2) {
-                            const days = parseInt(data.cell.raw);
-                            data.cell.styles.fontStyle = 'bold';
-                            data.cell.styles.textColor = days <= 14 ? RED : days <= 45 ? AMBER : GRAY;
-                        }
-                        if (data.column.index === 3) {
-                            const s = data.cell.raw.toLowerCase();
-                            data.cell.styles.fontStyle = 'bold';
-                            data.cell.styles.textColor = s === 'safe' ? GREEN : s === 'caution' ? AMBER : RED;
-                        }
-                    }
-                },
-            });
-        }
-        const earningsBottomY = earnings.length ? doc.lastAutoTable.finalY : blockStartY;
-
-        // ── Right: News bullets ──
-        if (news.length) {
-            y = blockStartY;
-            // Title
-            doc.setFontSize(7);
-            doc.setFont('helvetica', 'bold');
-            doc.setTextColor(...INDIGO);
-            doc.text('Top News', R[0], y);
+            doc.setFontSize(5.5);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(...GRAY);
+            const maxW = CW - 6;
+            doc.text(doc.splitTextToSize(item.title || '', maxW)[0], MG + 4, y);
+            y += 2.5;
+            doc.setFontSize(5);
+            doc.setTextColor(...LIGHT);
+            doc.text([item.publisher || item.source, item.date].filter(Boolean).join(' - '), MG + 4, y);
             y += ROW_H;
-
-            news.slice(0, 5).forEach((item) => {
-                const sc = item.sentiment === 'positive' ? GREEN : item.sentiment === 'negative' ? RED : MID;
-                doc.setFillColor(...sc);
-                doc.circle(R[0] + 1, y - 0.8, 0.8, 'F');
-
-                doc.setFontSize(5.5);
-                doc.setFont('helvetica', 'normal');
-                doc.setTextColor(...GRAY);
-                const maxW = PW - MG - R[0] - 4;
-                doc.text(doc.splitTextToSize(item.title || '', maxW)[0], R[0] + 4, y);
-                y += 2.5;
-                doc.setFontSize(5);
-                doc.setTextColor(...LIGHT);
-                doc.text([item.publisher || item.source, item.date].filter(Boolean).join(' - '), R[0] + 4, y);
-                y += ROW_H;
-            });
-        }
-
-        y = Math.max(earningsBottomY, y) + 1;
+        });
     }
 
     // ── Footer ──
