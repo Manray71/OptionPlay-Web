@@ -3,6 +3,16 @@ import { Play, Filter, ExternalLink, ChevronUp, ChevronDown, Search, Info, Downl
 import { runScanJson, logShadowTrade } from '../api';
 import { exportScannerPdf } from '../utils/exportScannerPdf';
 
+/** Check if US stock market is currently open (Mon-Fri 9:30-16:00 ET) */
+function isUSMarketOpen() {
+    const now = new Date();
+    const et = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    const day = et.getDay(); // 0=Sun, 6=Sat
+    if (day === 0 || day === 6) return false;
+    const mins = et.getHours() * 60 + et.getMinutes();
+    return mins >= 570 && mins < 960; // 9:30=570, 16:00=960
+}
+
 const STRATEGIES = [
     { id: 'multi', label: 'Multi-Strategy', desc: 'Best signal per symbol' },
     { id: 'pullback', label: 'Pullback', desc: 'RSI + Support dip' },
@@ -384,7 +394,10 @@ export default function Scanner({ onSymbolClick, scanResults, setScanResults, sc
                     {/* Market closed banner */}
                     {hasMarketClosed && (
                         <div style={{ padding: '8px 16px', background: 'rgba(255, 179, 0, 0.08)', borderBottom: '1px solid var(--border-subtle)', fontSize: 12, color: 'var(--amber)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <Info size={13} /> Market closed — credits estimated from last trading day
+                            <Info size={13} />
+                            {isUSMarketOpen()
+                                ? <>Scan ran outside market hours — <span style={{ textDecoration: 'underline', cursor: 'pointer' }} onClick={handleScan}>re-scan for live credits</span></>
+                                : 'Market closed — credits estimated from last trading day'}
                         </div>
                     )}
 
