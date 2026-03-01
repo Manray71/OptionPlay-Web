@@ -23,7 +23,6 @@ const ROW_H = 3.5;
 const MID_X = MG + CW / 2;
 
 const G = [MG, MG + COL, MG + COL * 2, MG + COL * 3, MG + COL * 4];
-const R = [MID_X + 2, MID_X + 32, MID_X + 62];
 
 const vixColor = (v) => v > 25 ? RED : v > 20 ? AMBER : v > 15 ? ACCENT : GREEN;
 
