@@ -1,15 +1,20 @@
 """JSON API routes that return structured data from OptionPlay internals."""
 
 from dataclasses import asdict
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import List, Optional
 import asyncio
 import os
+import re
 
+from ..rate_limit import limiter
+from .auth import validate_symbol
 from .routes import get_server
 from .news_sentiment import enrich_news_sentiment
+
+_SYMBOL_RE = re.compile(r"^[A-Z]{1,6}([.\-][A-Z]{1,2})?$")
 
 router = APIRouter()
 
@@ -18,6 +23,19 @@ router = APIRouter()
 
 class QuotesRequest(BaseModel):
     symbols: List[str]
+
+    @field_validator("symbols")
+    @classmethod
+    def validate_symbols(cls, v):
+        cleaned = []
+        for s in v:
+            norm = s.strip().upper()
+            if not _SYMBOL_RE.match(norm):
+                raise ValueError(f"Invalid symbol: {s}")
+            cleaned.append(norm)
+        if len(cleaned) > 50:
+            raise ValueError("Too many symbols (max 50)")
+        return cleaned
 
 class ScanRequest(BaseModel):
     strategy: str = "multi"
@@ -28,6 +46,14 @@ class ScanRequest(BaseModel):
 class ShadowLogRequest(BaseModel):
     symbol: str
     strategy: str
+
+    @field_validator("symbol")
+    @classmethod
+    def validate_symbol_field(cls, v):
+        norm = v.strip().upper()
+        if not _SYMBOL_RE.match(norm):
+            raise ValueError(f"Invalid symbol: {v}")
+        return norm
     score: float
     short_strike: float
     long_strike: float
@@ -77,7 +103,6 @@ def _ibkr_news_sync(symbol: str, days: int = 5, count: int = 5):
         return None
     sock.close()
 
-    # Run in OptionPlay's venv where ib_insync works with asyncio.run()
     optionplay_dir = os.path.abspath(
         os.path.join(os.path.dirname(__file__), "../../../OptionPlay")
     )
@@ -85,30 +110,18 @@ def _ibkr_news_sync(symbol: str, days: int = 5, count: int = 5):
     if not os.path.exists(python):
         return None
 
-    script = f"""
-import asyncio, json, sys
-sys.path.insert(0, {optionplay_dir!r})
-
-async def main():
-    from src.ibkr.bridge import get_ibkr_bridge
-    bridge = get_ibkr_bridge()
-    news = await bridge.get_news([{symbol!r}], days={days}, max_per_symbol={count})
-    import re
-    def clean(h):
-        return re.sub(r'\\{{[^}}]*\\}}', '', h).strip()
-    result = [
-        {{"title": clean(n.headline), "publisher": n.provider or "IBKR",
-          "link": None, "timestamp": 0,
-          "date": n.time or ""}}
-        for n in news
-    ]
-    print(json.dumps(result))
-
-asyncio.run(main())
-"""
+    script_path = os.path.join(
+        os.path.dirname(__file__), "..", "scripts", "ibkr_news.py"
+    )
     try:
         result = subprocess.run(
-            [python, "-c", script],
+            [
+                python, script_path,
+                "--symbol", str(symbol),
+                "--days", str(int(days)),
+                "--count", str(int(count)),
+                "--optionplay-dir", optionplay_dir,
+            ],
             capture_output=True, text=True, timeout=20,
             cwd=optionplay_dir,
         )
@@ -150,239 +163,17 @@ def _ibkr_portfolio_sync():
     if not os.path.exists(python):
         return None
 
-    script = f"""
-import asyncio, json, sys
-sys.path.insert(0, {optionplay_dir!r})
-
-async def main():
-    from ib_insync import IB
-    ib = IB()
-    await ib.connectAsync('{IBKR_HOST}', {IBKR_PORT}, clientId=99, timeout=10)
-    raw = ib.portfolio()
-
-    positions = []
-    for item in raw:
-        c = item.contract
-        pos = {{
-            "symbol": c.symbol,
-            "sec_type": c.secType,
-            "quantity": item.position,
-            "avg_cost": item.averageCost,
-            "market_value": item.marketValue,
-            "unrealized_pnl": item.unrealizedPNL,
-            "realized_pnl": item.realizedPNL,
-        }}
-        if c.secType == "OPT":
-            pos["strike"] = c.strike
-            pos["right"] = c.right
-            pos["expiry"] = c.lastTradeDateOrContractMonth
-        positions.append(pos)
-
-    ib.disconnect()
-
-    options = [p for p in positions if p["sec_type"] == "OPT"]
-    stocks = [p for p in positions if p["sec_type"] == "STK"]
-
-    groups = {{}}
-    for o in options:
-        key = (o["symbol"], o.get("expiry", ""))
-        groups.setdefault(key, []).append(o)
-
-    spreads = []
-    M = set()  # matched ids
-
-    for (sym, expiry), opts in groups.items():
-        puts = sorted([o for o in opts if o["right"] == "P"], key=lambda x: x["strike"])
-        calls = sorted([o for o in opts if o["right"] == "C"], key=lambda x: x["strike"])
-        sp_ = [p for p in puts if p["quantity"] < 0]
-        lp_ = [p for p in puts if p["quantity"] > 0]
-        sc_ = [c for c in calls if c["quantity"] < 0]
-        lc_ = [c for c in calls if c["quantity"] > 0]
-
-        def avail(*legs): return all(id(l) not in M for l in legs)
-        def mark(*legs):
-            for l in legs: M.add(id(l))
-        def nc2(a, b): return (a["avg_cost"] - b["avg_cost"]) / 100
-        def pnl(*legs): return sum(l.get("unrealized_pnl", 0) or 0 for l in legs)
-        def mktv(*legs): return sum(l.get("market_value", 0) or 0 for l in legs)
-
-        # ── PASS 1: 4-leg (Iron Condor / Iron Butterfly) ──
-        for lp in lp_:
-            for sp in sp_:
-                for sc in sc_:
-                    for lc in lc_:
-                        if not avail(lp, sp, sc, lc): continue
-                        q = abs(lp["quantity"])
-                        if not (abs(sp["quantity"]) == abs(sc["quantity"]) == abs(lc["quantity"]) == q): continue
-                        if not (lp["strike"] < sp["strike"] and sp["strike"] <= sc["strike"] and sc["strike"] < lc["strike"]): continue
-                        pw = sp["strike"] - lp["strike"]
-                        cw = lc["strike"] - sc["strike"]
-                        nc = nc2(sp, lp) + nc2(sc, lc)
-                        tp = "Iron Butterfly" if sp["strike"] == sc["strike"] else "Iron Condor"
-                        spreads.append({{
-                            "type": tp, "symbol": sym, "expiry": expiry,
-                            "short_strike": sp["strike"], "long_strike": lp["strike"],
-                            "short_call_strike": sc["strike"], "long_call_strike": lc["strike"],
-                            "width": max(pw, cw), "contracts": int(q), "net_credit": nc,
-                            "unrealized_pnl": pnl(lp, sp, sc, lc), "market_value": mktv(lp, sp, sc, lc),
-                        }})
-                        mark(lp, sp, sc, lc)
-
-        # ── PASS 2: 3-leg (Butterfly) ──
-        # Call Butterfly: long low + 2x short mid + long high
-        for i, lc1 in enumerate(lc_):
-            if not avail(lc1): continue
-            for sc in sc_:
-                if not avail(sc): continue
-                if sc["strike"] <= lc1["strike"]: continue
-                if abs(sc["quantity"]) != 2 * abs(lc1["quantity"]): continue
-                for lc2 in lc_[i+1:]:
-                    if not avail(lc2): continue
-                    if lc2["strike"] <= sc["strike"]: continue
-                    if abs(lc2["quantity"]) != abs(lc1["quantity"]): continue
-                    if sc["strike"] - lc1["strike"] != lc2["strike"] - sc["strike"]: continue
-                    w = sc["strike"] - lc1["strike"]
-                    nd = (lc1["avg_cost"] + lc2["avg_cost"] - sc["avg_cost"]) / 100
-                    spreads.append({{
-                        "type": "Call Butterfly", "symbol": sym, "expiry": expiry,
-                        "short_strike": sc["strike"], "long_strike": lc1["strike"],
-                        "long_call_strike": lc2["strike"],
-                        "width": w, "contracts": int(abs(lc1["quantity"])), "net_credit": -nd,
-                        "unrealized_pnl": pnl(lc1, sc, lc2), "market_value": mktv(lc1, sc, lc2),
-                    }})
-                    mark(lc1, sc, lc2); break
-                else: continue
-                break
-
-        # Put Butterfly: long high + 2x short mid + long low
-        for i, lp1 in enumerate(reversed(lp_)):
-            if not avail(lp1): continue
-            for sp in reversed(sp_):
-                if not avail(sp): continue
-                if sp["strike"] >= lp1["strike"]: continue
-                if abs(sp["quantity"]) != 2 * abs(lp1["quantity"]): continue
-                for lp2 in lp_:
-                    if not avail(lp2): continue
-                    if lp2["strike"] >= sp["strike"]: continue
-                    if abs(lp2["quantity"]) != abs(lp1["quantity"]): continue
-                    if lp1["strike"] - sp["strike"] != sp["strike"] - lp2["strike"]: continue
-                    w = lp1["strike"] - sp["strike"]
-                    nd = (lp1["avg_cost"] + lp2["avg_cost"] - sp["avg_cost"]) / 100
-                    spreads.append({{
-                        "type": "Put Butterfly", "symbol": sym, "expiry": expiry,
-                        "short_strike": sp["strike"], "long_strike": lp2["strike"],
-                        "long_put_strike": lp1["strike"],
-                        "width": w, "contracts": int(abs(lp1["quantity"])), "net_credit": -nd,
-                        "unrealized_pnl": pnl(lp1, sp, lp2), "market_value": mktv(lp1, sp, lp2),
-                    }})
-                    mark(lp1, sp, lp2); break
-                else: continue
-                break
-
-        # ── PASS 3a: Straddle / Strangle ──
-        for c in (sc_ + lc_):
-            if not avail(c): continue
-            for p in (sp_ + lp_):
-                if not avail(p): continue
-                if abs(c["quantity"]) != abs(p["quantity"]): continue
-                if (c["quantity"] > 0) != (p["quantity"] > 0): continue
-                is_long = c["quantity"] > 0
-                if c["strike"] == p["strike"]:
-                    tp = "Long Straddle" if is_long else "Short Straddle"
-                elif c["strike"] > p["strike"]:
-                    tp = "Long Strangle" if is_long else "Short Strangle"
-                else:
-                    continue
-                prem = (c["avg_cost"] + p["avg_cost"]) / 100
-                spreads.append({{
-                    "type": tp, "symbol": sym, "expiry": expiry,
-                    "short_strike": p["strike"] if not is_long else None,
-                    "long_strike": c["strike"] if is_long else None,
-                    "put_strike": p["strike"], "call_strike": c["strike"],
-                    "width": abs(c["strike"] - p["strike"]),
-                    "contracts": int(abs(c["quantity"])),
-                    "net_credit": prem if not is_long else -prem,
-                    "unrealized_pnl": pnl(c, p), "market_value": mktv(c, p),
-                }})
-                mark(c, p); break
-
-        # ── PASS 3b: 2-leg vertical spreads ──
-        # Bull Put Spread
-        for sp in sp_:
-            if not avail(sp): continue
-            for lp in lp_:
-                if not avail(lp): continue
-                if lp["strike"] < sp["strike"] and abs(lp["quantity"]) == abs(sp["quantity"]):
-                    spreads.append({{
-                        "type": "Bull Put Spread", "symbol": sym, "expiry": expiry,
-                        "short_strike": sp["strike"], "long_strike": lp["strike"],
-                        "width": sp["strike"] - lp["strike"],
-                        "contracts": int(abs(sp["quantity"])), "net_credit": nc2(sp, lp),
-                        "unrealized_pnl": pnl(sp, lp), "market_value": mktv(sp, lp),
-                    }})
-                    mark(sp, lp); break
-
-        # Call verticals
-        for sc in sc_:
-            if not avail(sc): continue
-            for lc in lc_:
-                if not avail(lc): continue
-                if abs(lc["quantity"]) != abs(sc["quantity"]): continue
-                w = abs(lc["strike"] - sc["strike"])
-                if sc["strike"] < lc["strike"]:
-                    spreads.append({{
-                        "type": "Bear Call Spread", "symbol": sym, "expiry": expiry,
-                        "short_strike": sc["strike"], "long_strike": lc["strike"],
-                        "width": w, "contracts": int(abs(sc["quantity"])), "net_credit": nc2(sc, lc),
-                        "unrealized_pnl": pnl(sc, lc), "market_value": mktv(sc, lc),
-                    }})
-                else:
-                    nd = nc2(lc, sc)
-                    spreads.append({{
-                        "type": "Bull Call Spread", "symbol": sym, "expiry": expiry,
-                        "short_strike": sc["strike"], "long_strike": lc["strike"],
-                        "width": w, "contracts": int(abs(sc["quantity"])), "net_credit": -nd,
-                        "unrealized_pnl": pnl(sc, lc), "market_value": mktv(sc, lc),
-                    }})
-                mark(sc, lc); break
-
-        # Bear Put Spread
-        for lp in lp_:
-            if not avail(lp): continue
-            for sp in sp_:
-                if not avail(sp): continue
-                if sp["strike"] < lp["strike"] and abs(sp["quantity"]) == abs(lp["quantity"]):
-                    nd = nc2(lp, sp)
-                    spreads.append({{
-                        "type": "Bear Put Spread", "symbol": sym, "expiry": expiry,
-                        "short_strike": sp["strike"], "long_strike": lp["strike"],
-                        "width": lp["strike"] - sp["strike"],
-                        "contracts": int(abs(sp["quantity"])), "net_credit": -nd,
-                        "unrealized_pnl": pnl(sp, lp), "market_value": mktv(sp, lp),
-                    }})
-                    mark(sp, lp); break
-
-    # ── PASS 4: Remaining unmatched ──
-    naked = []
-    for o in options:
-        if id(o) not in M:
-            naked.append({{
-                "symbol": o["symbol"], "sec_type": o["sec_type"],
-                "strike": o["strike"], "right": o["right"],
-                "expiry": o.get("expiry", ""), "quantity": o["quantity"],
-                "avg_cost": o["avg_cost"],
-                "unrealized_pnl": o.get("unrealized_pnl", 0),
-                "market_value": o.get("market_value", 0),
-            }})
-
-    result = {{"positions": positions, "spreads": spreads, "naked": naked, "stocks": stocks}}
-    print(json.dumps(result))
-
-asyncio.run(main())
-"""
+    script_path = os.path.join(
+        os.path.dirname(__file__), "..", "scripts", "ibkr_portfolio.py"
+    )
     try:
         result = subprocess.run(
-            [python, "-c", script],
+            [
+                python, script_path,
+                "--host", str(IBKR_HOST),
+                "--port", str(int(IBKR_PORT)),
+                "--optionplay-dir", optionplay_dir,
+            ],
             capture_output=True, text=True, timeout=20,
             cwd=optionplay_dir,
         )
@@ -755,6 +546,7 @@ def _detect_falling_knife(
 
 @router.get("/analyze/{symbol}")
 async def analyze_symbol(symbol: str):
+    symbol = validate_symbol(symbol)
     server = await get_server()
     if not server:
         return _error("OptionPlay server not available")
@@ -1071,8 +863,9 @@ async def analyze_symbol(symbol: str):
 
 
 @router.get("/news/{symbol}")
-async def get_news(symbol: str, count: int = 5):
-    symbol = symbol.upper()
+@limiter.limit("30/minute")
+async def get_news(request: Request, symbol: str, count: int = 5):
+    symbol = validate_symbol(symbol)
 
     # Try IBKR TWS first (direct sync connection)
     try:

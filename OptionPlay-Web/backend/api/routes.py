@@ -1,4 +1,5 @@
 from fastapi import APIRouter
+from .auth import validate_symbol
 import asyncio
 import sys
 import os
@@ -54,6 +55,7 @@ async def get_vix():
 
 @router.get("/quote/{symbol}")
 async def get_quote(symbol: str):
+    symbol = validate_symbol(symbol)
     server = await get_server()
     if not server:
         return {"error": "OptionPlay server not available"}
@@ -61,6 +63,7 @@ async def get_quote(symbol: str):
 
 @router.get("/analyze/{symbol}")
 async def analyze_symbol(symbol: str):
+    symbol = validate_symbol(symbol)
     server = await get_server()
     if not server:
         return {"error": "OptionPlay server not available"}

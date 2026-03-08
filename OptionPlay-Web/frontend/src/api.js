@@ -1,5 +1,22 @@
 const API_BASE = '/api';
 
+// ── Admin auth helper ──
+
+function adminHeaders() {
+    return {
+        'Content-Type': 'application/json',
+        'X-Admin-Key': import.meta.env.VITE_ADMIN_KEY || '',
+    };
+}
+
+function adminGetHeaders() {
+    return {
+        'X-Admin-Key': import.meta.env.VITE_ADMIN_KEY || '',
+    };
+}
+
+// ── General API (no auth required) ──
+
 export async function fetchVix() {
     const res = await fetch(`${API_BASE}/vix`);
     if (!res.ok) throw new Error('Failed to fetch VIX');
@@ -28,7 +45,7 @@ export async function runScan(criteria = {}) {
     return res.text();
 }
 
-// ── JSON API (structured data) ──
+// ── JSON API (structured data, no auth required) ──
 
 export async function fetchVixJson() {
     const res = await fetch(`${API_BASE}/json/vix`);
@@ -111,15 +128,16 @@ export async function logShadowTrade(tradeData) {
     return res.json();
 }
 
-// Admin API
+// ── Admin API (auth required) ──
+
 export async function fetchConfigFiles() {
-    const res = await fetch(`${API_BASE}/admin/files`);
+    const res = await fetch(`${API_BASE}/admin/files`, { headers: adminGetHeaders() });
     if (!res.ok) throw new Error('Failed to fetch config files');
     return res.json();
 }
 
 export async function fetchConfig(fileKey) {
-    const res = await fetch(`${API_BASE}/admin/${fileKey}`);
+    const res = await fetch(`${API_BASE}/admin/${fileKey}`, { headers: adminGetHeaders() });
     if (!res.ok) throw new Error(`Failed to fetch config: ${fileKey}`);
     return res.json();
 }
@@ -127,7 +145,7 @@ export async function fetchConfig(fileKey) {
 export async function saveConfig(fileKey, content) {
     const res = await fetch(`${API_BASE}/admin/${fileKey}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: adminHeaders(),
         body: JSON.stringify({ content }),
     });
     if (!res.ok) {
@@ -141,7 +159,7 @@ export async function saveConfig(fileKey, content) {
 export async function runDbUpdate(steps = ['vix', 'options', 'ohlcv'], dryRun = false) {
     const res = await fetch(`${API_BASE}/admin/db-update`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: adminHeaders(),
         body: JSON.stringify({ steps, dry_run: dryRun }),
     });
     if (!res.ok) throw new Error('DB update request failed');
@@ -149,13 +167,13 @@ export async function runDbUpdate(steps = ['vix', 'options', 'ohlcv'], dryRun = 
 }
 
 export async function fetchDbStatus() {
-    const res = await fetch(`${API_BASE}/admin/db-status`);
+    const res = await fetch(`${API_BASE}/admin/db-status`, { headers: adminGetHeaders() });
     if (!res.ok) throw new Error('Failed to fetch DB status');
     return res.json();
 }
 
 export async function fetchDbCoverage() {
-    const res = await fetch(`${API_BASE}/admin/db-coverage`);
+    const res = await fetch(`${API_BASE}/admin/db-coverage`, { headers: adminGetHeaders() });
     if (!res.ok) throw new Error('Failed to fetch DB coverage');
     return res.json();
 }
@@ -163,7 +181,7 @@ export async function fetchDbCoverage() {
 export async function runFundamentalsUpdate(mode = 'full') {
     const res = await fetch(`${API_BASE}/admin/fundamentals-update`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: adminHeaders(),
         body: JSON.stringify({ mode }),
     });
     if (!res.ok) throw new Error('Fundamentals update request failed');
