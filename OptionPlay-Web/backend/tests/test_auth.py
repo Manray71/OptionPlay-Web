@@ -13,35 +13,40 @@ from backend.api.auth import require_admin_key
 
 ADMIN_KEY = os.environ.get("OPTIONPLAY_ADMIN_KEY", "")
 
+# Dummy key used in CI where OPTIONPLAY_ADMIN_KEY is not set
+TEST_KEY = "test_secret_key_for_ci"
+
 
 class TestRequireAdminKey:
     """Test the require_admin_key() dependency function directly."""
 
     def test_missing_key_returns_401(self):
         """No key provided → 401."""
-        with pytest.raises(HTTPException) as exc_info:
-            require_admin_key(api_key=None)
-        assert exc_info.value.status_code == 401
-        assert "Invalid or missing" in exc_info.value.detail
+        with patch.dict(os.environ, {"OPTIONPLAY_ADMIN_KEY": TEST_KEY}):
+            with pytest.raises(HTTPException) as exc_info:
+                require_admin_key(api_key=None)
+            assert exc_info.value.status_code == 401
+            assert "Invalid or missing" in exc_info.value.detail
 
     def test_empty_key_returns_401(self):
         """Empty string key → 401."""
-        with pytest.raises(HTTPException) as exc_info:
-            require_admin_key(api_key="")
-        assert exc_info.value.status_code == 401
+        with patch.dict(os.environ, {"OPTIONPLAY_ADMIN_KEY": TEST_KEY}):
+            with pytest.raises(HTTPException) as exc_info:
+                require_admin_key(api_key="")
+            assert exc_info.value.status_code == 401
 
     def test_wrong_key_returns_401(self):
         """Wrong key → 401."""
-        with pytest.raises(HTTPException) as exc_info:
-            require_admin_key(api_key="wrong_key_12345")
-        assert exc_info.value.status_code == 401
+        with patch.dict(os.environ, {"OPTIONPLAY_ADMIN_KEY": TEST_KEY}):
+            with pytest.raises(HTTPException) as exc_info:
+                require_admin_key(api_key="wrong_key_12345")
+            assert exc_info.value.status_code == 401
 
     def test_correct_key_returns_key(self):
         """Correct key → returns the key string."""
-        if not ADMIN_KEY:
-            pytest.skip("OPTIONPLAY_ADMIN_KEY not set")
-        result = require_admin_key(api_key=ADMIN_KEY)
-        assert result == ADMIN_KEY
+        with patch.dict(os.environ, {"OPTIONPLAY_ADMIN_KEY": TEST_KEY}):
+            result = require_admin_key(api_key=TEST_KEY)
+            assert result == TEST_KEY
 
     def test_server_key_not_configured_returns_500(self):
         """If OPTIONPLAY_ADMIN_KEY env var is empty, server returns 500 (fail-closed)."""
