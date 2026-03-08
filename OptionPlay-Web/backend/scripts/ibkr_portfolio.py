@@ -72,20 +72,20 @@ def main():
             lc_ = [c for c in calls if c["quantity"] > 0]
 
             def avail(*legs):
-                return all(id(l) not in M for l in legs)
+                return all(id(leg) not in M for leg in legs)
 
             def mark(*legs):
-                for l in legs:
-                    M.add(id(l))
+                for leg in legs:
+                    M.add(id(leg))
 
             def nc2(a, b):
                 return (a["avg_cost"] - b["avg_cost"]) / 100
 
             def pnl(*legs):
-                return sum(l.get("unrealized_pnl", 0) or 0 for l in legs)
+                return sum(leg.get("unrealized_pnl", 0) or 0 for leg in legs)
 
             def mktv(*legs):
-                return sum(l.get("market_value", 0) or 0 for l in legs)
+                return sum(leg.get("market_value", 0) or 0 for leg in legs)
 
             # ── PASS 1: 4-leg (Iron Condor / Iron Butterfly) ──
             for lp in lp_:
