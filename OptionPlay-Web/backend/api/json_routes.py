@@ -14,7 +14,7 @@ from .auth import validate_symbol
 from .routes import get_server
 from .news_sentiment import enrich_news_sentiment
 
-_SYMBOL_RE = re.compile(r"^[A-Z]{1,6}([.\-][A-Z]{1,2})?$")
+_SYMBOL_RE = re.compile(r"^[A-Z]{1,6}([.\-][A-Z]{1,2})?!?$")
 
 router = APIRouter()
 
