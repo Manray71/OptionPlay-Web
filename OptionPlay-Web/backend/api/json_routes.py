@@ -71,13 +71,19 @@ class ShadowLogRequest(BaseModel):
 # ── Helpers ──
 
 def _vix_regime(vix: float) -> str:
-    if vix <= 15:
-        return "Low"
-    if vix <= 20:
-        return "Normal"
-    if vix <= 25:
-        return "Elevated"
-    return "High"
+    """Classify VIX into regime label using v2 canonical boundaries."""
+    try:
+        from src.services.vix_regime import _classify_regime
+        return _classify_regime(vix).value
+    except ImportError:
+        # Fallback if vix_regime module not available
+        if vix <= 15:
+            return "Low"
+        if vix <= 20:
+            return "Normal"
+        if vix <= 25:
+            return "Elevated"
+        return "High"
 
 
 def _error(msg: str, status: int = 503) -> JSONResponse:
@@ -221,7 +227,49 @@ async def get_vix():
         except Exception:
             pass
 
-        return {"vix": round(vix, 2), "regime": _vix_regime(vix), "change": vix_change, "change_pct": vix_change_pct if vix_change is not None else None}
+        resp = {"vix": round(vix, 2), "regime": _vix_regime(vix), "change": vix_change, "change_pct": vix_change_pct if vix_change is not None else None}
+
+        # Enrich with v2 regime parameters
+        try:
+            from src.services.vix_regime import get_regime_params
+            params = get_regime_params(vix)
+            resp["min_score"] = params.min_score
+            resp["max_positions"] = params.max_positions
+        except Exception:
+            pass
+
+        return resp
+    except Exception as e:
+        return _error(str(e))
+
+
+@router.get("/regime")
+async def get_regime():
+    """VIX Regime v2 — interpolated trading parameters."""
+    server = await get_server()
+    if not server:
+        return _error("OptionPlay server not available")
+
+    try:
+        vix = await server.handlers.vix.get_vix()
+        if vix is None:
+            return _error("VIX data unavailable")
+
+        from src.services.vix_regime import get_regime_params
+        params = get_regime_params(vix, vix_futures_front=None, vix_trend=None)
+
+        return {
+            "vix": round(vix, 2),
+            "regime": params.regime_label.value,
+            "min_score": params.min_score,
+            "spread_width": params.spread_width,
+            "earnings_buffer_days": params.earnings_buffer_days,
+            "max_positions": params.max_positions,
+            "max_per_sector": params.max_per_sector,
+            "term_structure": params.term_structure,
+            "stress_adjusted": params.stress_adjusted,
+            "vix_trend": params.vix_trend,
+        }
     except Exception as e:
         return _error(str(e))
 
@@ -326,7 +374,7 @@ async def run_scan(req: ScanRequest):
         scan_handler = server.handlers.scan
 
         # Map strategy string to ScanMode
-        from src.scanner.multi_strategy_scanner import ScanMode
+        from src.scanner.multi_strategy_scanner import ScanMode, ScanConfig, MultiStrategyScanner
         mode_map = {
             "multi": ScanMode.BEST_SIGNAL,
             "pullback": ScanMode.PULLBACK_ONLY,
@@ -337,8 +385,19 @@ async def run_scan(req: ScanRequest):
         }
         mode = mode_map.get(req.strategy, ScanMode.BEST_SIGNAL)
 
-        # Build scanner and data fetcher, then scan directly
-        scanner = scan_handler._get_multi_scanner(min_score=req.min_score)
+        # Build scanner with v2 feature flags
+        scan_config = ScanConfig(
+            min_score=req.min_score,
+            enable_regime_v2=True,
+            enable_sector_rs=True,
+        )
+        scanner = MultiStrategyScanner(config=scan_config)
+
+        # Prefetch sector RS data
+        try:
+            await scanner.prefetch_sector_rs()
+        except Exception:
+            pass  # Non-critical, scan works without it
 
         # Get symbols from watchlist
         from src.config.watchlist_loader import get_watchlist_loader
@@ -422,6 +481,13 @@ async def run_scan(req: ScanRequest):
                     else:
                         sig["earnings_date"] = None
                         sig["days_to_earnings"] = None
+
+                    # Forward v2 signal details
+                    details = sig.get("details", {})
+                    sig["sector_rs_quadrant"] = details.get("sector_rs_quadrant")
+                    sig["sector_rs_modifier"] = details.get("sector_rs_modifier")
+                    sig["regime_v2_label"] = details.get("regime_v2_label")
+                    sig["regime_v2_min_score"] = details.get("regime_v2_min_score")
         except Exception:
             pass  # enrichment failure should not break scan results
 
@@ -1120,7 +1186,29 @@ async def get_events(days: int = 30):
 
 @router.get("/sectors")
 async def get_sectors():
-    """Sector momentum analysis with relative strength."""
+    """Sector relative strength — RRG quadrant analysis (v2)."""
+    # Try v2 SectorRSService first
+    try:
+        from src.services.sector_rs import SectorRSService
+
+        service = SectorRSService()
+        sectors = await service.get_all_sector_rs()
+
+        result = []
+        for name, rs in sorted(sectors.items(), key=lambda x: x[1].rs_ratio, reverse=True):
+            result.append({
+                "sector": rs.sector,
+                "etf": rs.etf_symbol,
+                "rs_ratio": round(rs.rs_ratio, 2),
+                "rs_momentum": round(rs.rs_momentum, 2),
+                "quadrant": rs.quadrant.value,
+                "score_modifier": rs.score_modifier,
+            })
+        return {"sectors": result, "version": "v2"}
+    except Exception:
+        pass
+
+    # Fallback to v1 SectorCycleService
     try:
         from src.services.sector_cycle_service import SectorCycleService
 
@@ -1138,7 +1226,7 @@ async def get_sectors():
                 "rs_60d": round(s.relative_strength_60d, 2),
                 "breadth": round(s.breadth_proxy, 3),
             })
-        return {"sectors": result}
+        return {"sectors": result, "version": "v1"}
     except Exception as e:
         return _error(str(e))
 
@@ -1287,7 +1375,7 @@ async def log_shadow_trade(req: ShadowLogRequest):
     )
     symbol = req.symbol.upper()
 
-    # ── VIX + Regime ──
+    # ── VIX + Regime (v2) ──
     vix_at_log = None
     regime_at_log = None
     try:
@@ -1295,9 +1383,13 @@ async def log_shadow_trade(req: ShadowLogRequest):
         if server:
             vix_at_log = await server.handlers.vix.get_vix()
             if vix_at_log is not None:
-                ctx = server.handlers.analysis._ctx
-                regime = ctx.vix_selector.get_regime(vix_at_log)
-                regime_at_log = regime.value if hasattr(regime, "value") else str(regime)
+                try:
+                    from src.services.vix_regime import _classify_regime
+                    regime_at_log = _classify_regime(vix_at_log).value
+                except ImportError:
+                    ctx = server.handlers.analysis._ctx
+                    regime = ctx.vix_selector.get_regime(vix_at_log)
+                    regime_at_log = regime.value if hasattr(regime, "value") else str(regime)
     except Exception:
         pass
 

@@ -12,6 +12,7 @@ import {
     RefreshCw,
     Download,
 } from 'lucide-react';
+import RRGChart from './RRGChart';
 import { exportDashboardPdf } from '../utils/exportDashboardPdf';
 import {
     fetchVixJson,
@@ -20,6 +21,7 @@ import {
     fetchSectorsJson,
     fetchEarningsCalendarJson,
     fetchMarketNewsJson,
+    fetchRegimeJson,
 } from '../api';
 
 // ──────────────────────────────────────────────────────────
@@ -73,9 +75,10 @@ function VixGauge({ value }) {
     const needleY = 100 - 80 * Math.sin((Math.PI * (180 - angle)) / 180);
 
     let color = 'var(--green)';
-    if (value > 25) color = 'var(--red)';
-    else if (value > 20) color = 'var(--amber)';
-    else if (value > 15) color = 'var(--text-accent)';
+    if (value >= 33) color = 'var(--red)';
+    else if (value >= 27) color = '#ff6b6b';
+    else if (value >= 22) color = 'var(--amber)';
+    else if (value >= 17) color = 'var(--text-accent)';
 
     return (
         <div style={{ position: 'relative', width: '100%', maxWidth: 120, margin: '2px auto' }}>
@@ -137,14 +140,23 @@ function ImpactBadge({ impact }) {
 }
 
 // ──────────────────────────────────────────────────────────
-// Sector regime badge
+// Quadrant badge for RRG sectors (v2) / legacy regime badge (v1)
 // ──────────────────────────────────────────────────────────
 
-function RegimeBadge({ regime }) {
-    const cls = regime === 'STRONG' ? 'badge-green'
-        : regime === 'WEAK' || regime === 'CRISIS' ? 'badge-red'
-        : 'badge-muted';
-    return <span className={`badge ${cls}`} style={{ fontSize: 10 }}>{regime}</span>;
+function QuadrantBadge({ quadrant }) {
+    const map = {
+        leading: 'badge-green',
+        improving: 'badge-indigo',
+        weakening: 'badge-amber',
+        lagging: 'badge-red',
+        // v1 fallback
+        STRONG: 'badge-green',
+        WEAK: 'badge-red',
+        CRISIS: 'badge-red',
+    };
+    const cls = map[quadrant] || 'badge-muted';
+    const label = (quadrant || '').charAt(0).toUpperCase() + (quadrant || '').slice(1);
+    return <span className={`badge ${cls}`} style={{ fontSize: 10 }}>{label}</span>;
 }
 
 // ──────────────────────────────────────────────────────────
@@ -185,6 +197,7 @@ export default function Dashboard({ onSymbolClick }) {
     const [market, setMarket] = useState(FALLBACK_MARKET);
     const [events, setEvents] = useState([]);
     const [sectors, setSectors] = useState([]);
+    const [regimeParams, setRegimeParams] = useState(null);
     const [earnings, setEarnings] = useState([]);
     const [news, setNews] = useState([]);
 
@@ -193,6 +206,7 @@ export default function Dashboard({ onSymbolClick }) {
         if (data.market?.length) setMarket(data.market);
         if (data.events) setEvents(data.events);
         if (data.sectors) setSectors(data.sectors);
+        if (data.regimeParams) setRegimeParams(data.regimeParams);
         if (data.earnings) setEarnings(data.earnings);
         if (data.news) setNews(data.news);
         setDemoMode(data.demoMode || false);
@@ -207,6 +221,7 @@ export default function Dashboard({ onSymbolClick }) {
             fetchSectorsJson(),
             fetchEarningsCalendarJson(8),
             fetchMarketNewsJson(5),
+            fetchRegimeJson(),
         ]);
 
         let usedFallback = false;
@@ -227,6 +242,7 @@ export default function Dashboard({ onSymbolClick }) {
         if (results[3].status === 'fulfilled' && results[3].value.sectors) data.sectors = results[3].value.sectors;
         if (results[4].status === 'fulfilled' && results[4].value.earnings) data.earnings = results[4].value.earnings;
         if (results[5].status === 'fulfilled' && results[5].value.news) data.news = results[5].value.news;
+        if (results[6]?.status === 'fulfilled' && !results[6].value.error) data.regimeParams = results[6].value;
 
         data.demoMode = usedFallback;
         writeCache(data);
@@ -319,7 +335,7 @@ export default function Dashboard({ onSymbolClick }) {
                             <div className="stat-card" style={{ textAlign: 'center' }}>
                                 <div className="stat-label">VIX — {regime}</div>
                                 <VixGauge value={vix} regime={regime} />
-                                <div className="stat-value" style={{ color: vix > 25 ? 'var(--red)' : vix > 20 ? 'var(--amber)' : vix > 15 ? 'var(--text-accent)' : 'var(--green)' }}>{vix.toFixed(1)}</div>
+                                <div className="stat-value" style={{ color: vix >= 33 ? 'var(--red)' : vix >= 27 ? '#ff6b6b' : vix >= 22 ? 'var(--amber)' : vix >= 17 ? 'var(--text-accent)' : 'var(--green)' }}>{vix.toFixed(1)}</div>
                                 <div className="stat-change" style={{ color: vixChange > 0 ? 'var(--red)' : vixChange < 0 ? 'var(--green)' : 'var(--text-muted)', fontWeight: 600 }}>
                                     {vixChange != null ? `${vixChange >= 0 ? '+' : ''}${vixChange.toFixed(2)} (${vixChangePct >= 0 ? '+' : ''}${(vixChangePct ?? 0).toFixed(2)}%)` : '—'}
                                 </div>
@@ -356,6 +372,44 @@ export default function Dashboard({ onSymbolClick }) {
                                 </div>
                             </div>
                         </div>
+
+                        {/* ─── Regime Parameters (v2) ─── */}
+                        {regimeParams && (
+                            <div className="analysis-section fade-in" style={{ animationDelay: '0.03s' }}>
+                                <div className="card" style={{ padding: '14px 20px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                                        <h3 style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted)', margin: 0 }}>
+                                            Regime Parameters
+                                        </h3>
+                                        <span className={`badge ${
+                                            ['STRESS', 'EXTREME'].includes(regimeParams.regime) ? 'badge-red'
+                                            : ['HIGH_VOL', 'ELEVATED'].includes(regimeParams.regime) ? 'badge-amber'
+                                            : regimeParams.regime === 'NORMAL' ? 'badge-indigo'
+                                            : 'badge-green'
+                                        }`} style={{ fontSize: 10 }}>
+                                            {regimeParams.regime?.replace(/_/g, ' ')}
+                                        </span>
+                                        {regimeParams.stress_adjusted && (
+                                            <span className="badge badge-red" style={{ fontSize: 9 }}>STRESS</span>
+                                        )}
+                                    </div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12 }}>
+                                        {[
+                                            ['Min Score', regimeParams.min_score?.toFixed(1)],
+                                            ['Max Positions', regimeParams.max_positions],
+                                            ['Max/Sector', regimeParams.max_per_sector],
+                                            ['Spread Width', `$${regimeParams.spread_width?.toFixed(2)}`],
+                                            ['Earnings Buffer', `${regimeParams.earnings_buffer_days}d`],
+                                        ].map(([label, val]) => (
+                                            <div key={label} style={{ textAlign: 'center' }}>
+                                                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>{label}</div>
+                                                <div style={{ fontSize: 15, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)' }}>{val}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
 
                         {/* ─── Market Indices ─── */}
                         <div className="analysis-section">
@@ -474,11 +528,11 @@ export default function Dashboard({ onSymbolClick }) {
                             </div>
                         </div>
 
-                        {/* ─── Sector Momentum ─── */}
+                        {/* ─── Sector Relative Strength (RRG) ─── */}
                         <div className="card fade-in analysis-section" style={{ animationDelay: '0.2s' }}>
                             <CollapsibleHeader
                                 icon={<BarChart3 size={14} style={{ verticalAlign: 'middle' }} />}
-                                title="Sector Momentum"
+                                title="Sector Relative Strength"
                                 right={<span className="badge badge-indigo">{sectors.length} sectors</span>}
                                 collapsed={collapsed.sectors}
                                 onToggle={() => toggleSection('sectors')}
@@ -488,7 +542,50 @@ export default function Dashboard({ onSymbolClick }) {
                                     <div className="card-body" style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>
                                         Sector data loading...
                                     </div>
+                                ) : sectors[0].rs_ratio != null ? (
+                                    /* ── v2: RRG Chart + Table ── */
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0 }}>
+                                        <div style={{ padding: '16px', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                                            <RRGChart
+                                                data={sectors.map(s => ({
+                                                    sector: s.sector,
+                                                    etf: s.etf,
+                                                    rsRatio: s.rs_ratio,
+                                                    rsMomentum: s.rs_momentum,
+                                                    quadrant: s.quadrant,
+                                                }))}
+                                                width={480}
+                                                height={380}
+                                            />
+                                        </div>
+                                        <div style={{ overflowX: 'auto' }}>
+                                            <table className="data-table">
+                                                <thead>
+                                                    <tr><th>Sector</th><th>ETF</th><th>Quadrant</th><th style={{ textAlign: 'right' }}>RS Ratio</th><th style={{ textAlign: 'right' }}>RS Mom</th><th style={{ textAlign: 'right' }}>Mod</th></tr>
+                                                </thead>
+                                                <tbody>
+                                                    {sectors.map((s, i) => (
+                                                        <tr key={i}>
+                                                            <td style={{ fontWeight: 600 }}>{s.sector}</td>
+                                                            <td className="symbol">{s.etf}</td>
+                                                            <td><QuadrantBadge quadrant={s.quadrant} /></td>
+                                                            <td style={{ textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: s.rs_ratio >= 100 ? 'var(--green)' : 'var(--red)' }}>
+                                                                {s.rs_ratio.toFixed(2)}
+                                                            </td>
+                                                            <td style={{ textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: s.rs_momentum >= 100 ? 'var(--green)' : 'var(--red)' }}>
+                                                                {s.rs_momentum.toFixed(2)}
+                                                            </td>
+                                                            <td style={{ textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontSize: 12, fontWeight: 600, color: s.score_modifier > 0 ? 'var(--green)' : s.score_modifier < 0 ? 'var(--red)' : 'var(--text-muted)' }}>
+                                                                {s.score_modifier > 0 ? '+' : ''}{s.score_modifier.toFixed(1)}
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
                                 ) : (
+                                    /* ── v1 fallback: legacy momentum table ── */
                                     <div style={{ overflowX: 'auto' }}>
                                         <table className="data-table">
                                             <thead>
@@ -500,16 +597,16 @@ export default function Dashboard({ onSymbolClick }) {
                                                         <td style={{ fontWeight: 600 }}>{s.sector}</td>
                                                         <td className="symbol">{s.etf}</td>
                                                         <td style={{ textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontWeight: 600, color: s.momentum_factor >= 1.0 ? 'var(--green)' : s.momentum_factor < 0.85 ? 'var(--red)' : 'var(--text-secondary)' }}>
-                                                            {s.momentum_factor.toFixed(3)}
+                                                            {s.momentum_factor?.toFixed(3) ?? '—'}
                                                         </td>
-                                                        <td><RegimeBadge regime={s.regime} /></td>
+                                                        <td><QuadrantBadge quadrant={s.regime} /></td>
                                                         <td style={{ textAlign: 'right', color: s.rs_30d >= 0 ? 'var(--green)' : 'var(--red)', fontSize: 12 }}>
-                                                            {s.rs_30d >= 0 ? '+' : ''}{s.rs_30d.toFixed(2)}%
+                                                            {s.rs_30d >= 0 ? '+' : ''}{s.rs_30d?.toFixed(2) ?? '—'}%
                                                         </td>
                                                         <td style={{ textAlign: 'right', color: s.rs_60d >= 0 ? 'var(--green)' : 'var(--red)', fontSize: 12 }}>
-                                                            {s.rs_60d >= 0 ? '+' : ''}{s.rs_60d.toFixed(2)}%
+                                                            {s.rs_60d >= 0 ? '+' : ''}{s.rs_60d?.toFixed(2) ?? '—'}%
                                                         </td>
-                                                        <td style={{ textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>{s.breadth.toFixed(3)}</td>
+                                                        <td style={{ textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>{s.breadth?.toFixed(3) ?? '—'}</td>
                                                     </tr>
                                                 ))}
                                             </tbody>

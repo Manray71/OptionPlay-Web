@@ -298,6 +298,10 @@ export default function Scanner({ onSymbolClick, scanResults, setScanResults, sc
                     signal: strength.charAt(0).toUpperCase() + strength.slice(1).toLowerCase(),
                     earningsDate: s.earnings_date ?? '',
                     earningsDays: s.days_to_earnings ?? null,
+                    sector_rs_quadrant: s.sector_rs_quadrant ?? null,
+                    sector_rs_modifier: s.sector_rs_modifier ?? null,
+                    regime_v2_label: s.regime_v2_label ?? null,
+                    regime_v2_min_score: s.regime_v2_min_score ?? null,
                 };
             });
             setResults(mapped);
@@ -543,7 +547,20 @@ export default function Scanner({ onSymbolClick, scanResults, setScanResults, sc
                                                 <td style={{ fontSize: 13, color: r.riskReward >= 0.40 ? 'var(--green)' : r.riskReward != null ? 'var(--text-secondary)' : 'var(--text-muted)' }}>
                                                     {r.riskReward != null ? `${(r.riskReward * 100).toFixed(0)}%` : r.tradeQuality != null ? '—' : <div className="spinner" style={{ width: 10, height: 10, borderWidth: 1.5 }} />}
                                                 </td>
-                                                <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{r.sector}</td>
+                                                <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                                                    {r.sector}
+                                                    {r.sector_rs_quadrant && (
+                                                        <span className={`badge ${
+                                                            r.sector_rs_quadrant === 'leading' ? 'badge-green'
+                                                            : r.sector_rs_quadrant === 'improving' ? 'badge-indigo'
+                                                            : r.sector_rs_quadrant === 'weakening' ? 'badge-amber'
+                                                            : r.sector_rs_quadrant === 'lagging' ? 'badge-red'
+                                                            : 'badge-muted'
+                                                        }`} style={{ fontSize: 9, marginLeft: 4, padding: '1px 5px' }}>
+                                                            {r.sector_rs_quadrant === 'leading' ? 'L' : r.sector_rs_quadrant === 'improving' ? 'I' : r.sector_rs_quadrant === 'weakening' ? 'W' : r.sector_rs_quadrant === 'lagging' ? 'X' : ''}
+                                                        </span>
+                                                    )}
+                                                </td>
                                                 <td style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                                                     {r.credit != null && (
                                                         loggedTrades[r.symbol] === 'logged' ? (

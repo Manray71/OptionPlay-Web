@@ -105,6 +105,12 @@ export async function fetchSectorsJson() {
     return res.json();
 }
 
+export async function fetchRegimeJson() {
+    const res = await fetch(`${API_BASE}/json/regime`);
+    if (!res.ok) throw new Error('Failed to fetch regime');
+    return res.json();
+}
+
 export async function fetchEarningsCalendarJson(count = 5) {
     const res = await fetch(`${API_BASE}/json/earnings-calendar?count=${count}`);
     if (!res.ok) throw new Error('Failed to fetch earnings calendar');
