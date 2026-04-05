@@ -268,7 +268,7 @@ async def get_regime():
             "max_per_sector": params.max_per_sector,
             "term_structure": params.term_structure,
             "stress_adjusted": params.stress_adjusted,
-            "vix_trend": params.vix_trend,
+            "vix_trend": params.vix_trend_label,
         }
     except Exception as e:
         return _error(str(e))

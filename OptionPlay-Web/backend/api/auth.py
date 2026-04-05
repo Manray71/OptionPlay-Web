@@ -11,7 +11,7 @@ from fastapi.security import APIKeyHeader
 _header_scheme = APIKeyHeader(name="X-Admin-Key", auto_error=False)
 
 
-def require_admin_key(api_key: str = Security(_header_scheme)) -> str:
+async def require_admin_key(api_key: str = Security(_header_scheme)) -> str:
     """FastAPI dependency: validates the admin API key from X-Admin-Key header.
 
     Fail-closed: if OPTIONPLAY_ADMIN_KEY is not configured, returns 500.
