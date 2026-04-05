@@ -13,7 +13,7 @@ const CONFIG_TABS = [
 
 const DB_STEPS = [
     { id: 'vix', label: 'VIX Data', desc: 'Historical VIX levels' },
-    { id: 'options', label: 'Options Chains', desc: 'Greeks & IV via Tradier' },
+    { id: 'options', label: 'Options Chains', desc: 'Greeks & IV via IBKR' },
     { id: 'ohlcv', label: 'OHLCV Prices', desc: 'Daily candlestick data' },
 ];
 

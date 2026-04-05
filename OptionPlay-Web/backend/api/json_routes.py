@@ -331,7 +331,7 @@ async def get_quotes(req: QuotesRequest):
         price = None
         change_pct = None
 
-        # 1. Try Tradier via OptionPlay server (US equities not in yfinance map)
+        # 1. Try IBKR via OptionPlay server (US equities not in yfinance map)
         if server and sym_upper not in YFINANCE_MAP:
             try:
                 quote = await server.handlers.quote._get_quote_cached(sym_upper)
@@ -340,7 +340,7 @@ async def get_quotes(req: QuotesRequest):
             except Exception:
                 pass
 
-        # 2. yfinance for change_pct (always) or price (if Tradier failed / non-US)
+        # 2. yfinance for change_pct (always) or price (if IBKR failed / non-US)
         yf_sym = YFINANCE_MAP.get(sym_upper, sym_upper)
         try:
             yf_price, yf_change = await loop.run_in_executor(
@@ -670,8 +670,9 @@ async def analyze_symbol(symbol: str):
         iv_data = None
         try:
             ctx = scan_handler._ctx
-            if ctx.tradier_provider:
-                iv = await ctx.tradier_provider.get_iv_data(symbol)
+            provider = ctx.ibkr_provider
+            if provider:
+                iv = await provider.get_iv_data(symbol)
                 if iv:
                     iv_data = iv.to_dict()
         except Exception:
@@ -1190,8 +1191,10 @@ async def get_sectors():
     # Try v2 SectorRSService first
     try:
         from src.services.sector_rs import SectorRSService
+        from src.data_providers.local_db import LocalDBProvider
 
-        service = SectorRSService()
+        provider = LocalDBProvider()
+        service = SectorRSService(provider=provider)
         sectors = await service.get_all_sector_rs()
 
         result = []
@@ -1338,7 +1341,7 @@ async def log_shadow_trade(req: ShadowLogRequest):
     Mirrors the daily_picks shadow-logging logic in scan_composed.py:
     1. Settings check (enabled, auto_log_min_score)
     2. Strategy name mapping
-    3. Tradability check against live options chain (if Tradier available)
+    3. Tradability check against live options chain (if IBKR available)
     4. log_trade() on success, log_rejection() on failure
     5. VIX + regime attached automatically
     """
@@ -1399,8 +1402,9 @@ async def log_shadow_trade(req: ShadowLogRequest):
     chain_details = {}
     try:
         server = server if "server" in dir() else await get_server()
-        if server and server.handlers.analysis._ctx.tradier_connected:
-            provider = server.handlers.analysis._ctx.tradier_provider
+        ctx = server.handlers.analysis._ctx if server else None
+        if ctx and getattr(ctx, 'ibkr_connected', False):
+            provider = ctx.ibkr_provider
             if provider and req.expiration:
                 tradeable, rejection_reason, chain_details = await check_tradability(
                     provider, symbol, req.expiration,
