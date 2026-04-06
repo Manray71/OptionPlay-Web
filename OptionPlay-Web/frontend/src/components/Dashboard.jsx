@@ -19,6 +19,7 @@ import {
     fetchQuotesJson,
     fetchEventsJson,
     fetchSectorsJson,
+    fetchStockRSJson,
     fetchEarningsCalendarJson,
     fetchMarketNewsJson,
     fetchRegimeJson,
@@ -52,15 +53,15 @@ const FALLBACK_MARKET = [
 
 function CollapsibleHeader({ icon, title, right, collapsed, onToggle }) {
     return (
-        <button className="card-header-toggle" onClick={onToggle} type="button">
+        <div className="card-header-toggle" onClick={onToggle} role="button" tabIndex={0} style={{ cursor: 'pointer' }}>
             <div className="header-left">
                 <h3>{icon} {title}</h3>
             </div>
             <div className="header-right">
-                {right}
+                <span onClick={(e) => e.stopPropagation()}>{right}</span>
                 <ChevronDown size={16} className={`chevron${collapsed ? ' collapsed' : ''}`} />
             </div>
-        </button>
+        </div>
     );
 }
 
@@ -197,6 +198,10 @@ export default function Dashboard({ onSymbolClick }) {
     const [market, setMarket] = useState(FALLBACK_MARKET);
     const [events, setEvents] = useState([]);
     const [sectors, setSectors] = useState([]);
+    const [stockRS, setStockRS] = useState([]);
+    const [drillSector, setDrillSector] = useState(null);
+    const [drillLoading, setDrillLoading] = useState(false);
+    const [hideEarnings, setHideEarnings] = useState(false);
     const [regimeParams, setRegimeParams] = useState(null);
     const [earnings, setEarnings] = useState([]);
     const [news, setNews] = useState([]);
@@ -258,6 +263,8 @@ export default function Dashboard({ onSymbolClick }) {
             if (cached) {
                 applyData(cached);
                 setLoading(false);
+                // Refresh in background for new data
+                fetchFresh();
                 return;
             }
             // No cache — fetch fresh
@@ -275,6 +282,22 @@ export default function Dashboard({ onSymbolClick }) {
     };
 
     const toggleSection = (id) => setCollapsed(prev => ({ ...prev, [id]: !prev[id] }));
+
+    const drillIntoSector = async (sectorName, earningsFilter = hideEarnings) => {
+        setDrillSector(sectorName);
+        setDrillLoading(true);
+        try {
+            const res = await fetchStockRSJson(sectorName, earningsFilter ? 45 : 0);
+            if (res.stocks) setStockRS(res.stocks);
+        } catch (e) { console.error('Drill-down failed:', e); }
+        setDrillLoading(false);
+    };
+    const resetDrill = () => { setDrillSector(null); setStockRS([]); setHideEarnings(false); };
+    const toggleEarningsFilter = () => {
+        const next = !hideEarnings;
+        setHideEarnings(next);
+        if (drillSector) drillIntoSector(drillSector, next);
+    };
 
     const lastUpdated = cacheTime
         ? new Date(cacheTime).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
@@ -528,12 +551,25 @@ export default function Dashboard({ onSymbolClick }) {
                             </div>
                         </div>
 
-                        {/* ─── Sector Relative Strength (RRG) ─── */}
+                        {/* ─── Sector / Stock Relative Strength (RRG) ─── */}
                         <div className="card fade-in analysis-section" style={{ animationDelay: '0.2s' }}>
                             <CollapsibleHeader
                                 icon={<BarChart3 size={14} style={{ verticalAlign: 'middle' }} />}
-                                title="Sector Relative Strength"
-                                right={<span className="badge badge-indigo">{sectors.length} sectors</span>}
+                                title={drillSector ? `${drillSector} — Stocks` : 'Sector Relative Strength'}
+                                right={drillSector ? (
+                                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                                        <button onClick={(e) => { e.stopPropagation(); toggleEarningsFilter(); }}
+                                            style={{ background: hideEarnings ? 'var(--amber)' : 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)', borderRadius: 6, padding: '3px 10px', color: hideEarnings ? '#000' : 'var(--text-secondary)', fontSize: 11, cursor: 'pointer', fontWeight: hideEarnings ? 600 : 400 }}>
+                                            {hideEarnings ? 'Earnings hidden' : 'Hide Earnings'}
+                                        </button>
+                                        <button onClick={(e) => { e.stopPropagation(); resetDrill(); }}
+                                            style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)', borderRadius: 6, padding: '3px 10px', color: 'var(--text-secondary)', fontSize: 11, cursor: 'pointer' }}>
+                                            Reset
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <span className="badge badge-indigo">{sectors.length} sectors</span>
+                                )}
                                 collapsed={collapsed.sectors}
                                 onToggle={() => toggleSection('sectors')}
                             />
@@ -543,21 +579,52 @@ export default function Dashboard({ onSymbolClick }) {
                                         Sector data loading...
                                     </div>
                                 ) : sectors[0].rs_ratio != null ? (
-                                    /* ── v2: RRG Chart + Table ── */
-                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0 }}>
-                                        <div style={{ padding: '16px', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                                            <RRGChart
-                                                data={sectors.map(s => ({
-                                                    sector: s.sector,
-                                                    etf: s.etf,
-                                                    rsRatio: s.rs_ratio,
-                                                    rsMomentum: s.rs_momentum,
-                                                    quadrant: s.quadrant,
-                                                }))}
-                                                width={480}
-                                                height={380}
-                                            />
+                                    /* ── v2: RRG Chart + Table with Drill-Down ── */
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 0 }}>
+                                        <div style={{ padding: '16px', position: 'relative' }}>
+                                            {drillLoading && (
+                                                <div style={{ position: 'absolute', top: 16, right: 16, color: 'var(--text-muted)', fontSize: 11 }}>Loading...</div>
+                                            )}
+                                            {drillSector && stockRS.length > 0 ? (
+                                                <RRGChart
+                                                    data={stockRS.map(s => ({
+                                                        sector: s.sector,
+                                                        etf: s.symbol,
+                                                        rsRatio: s.rs_ratio,
+                                                        rsMomentum: s.rs_momentum,
+                                                        quadrant: s.quadrant,
+                                                        trail: s.trail,
+                                                        daysToEarnings: s.days_to_earnings,
+                                                    }))}
+                                                    width={630}
+                                                    height={500}
+                                                />
+                                            ) : drillSector && !drillLoading ? (
+                                                <div style={{ textAlign: 'center', padding: '48px 24px', color: 'var(--text-muted)', fontSize: 13 }}>
+                                                    All {drillSector} stocks have earnings within 45 days.
+                                                    <br />
+                                                    <button onClick={() => { setHideEarnings(false); drillIntoSector(drillSector, false); }}
+                                                        style={{ marginTop: 12, background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)', borderRadius: 6, padding: '5px 14px', color: 'var(--text-secondary)', fontSize: 12, cursor: 'pointer' }}>
+                                                        Show all stocks
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <RRGChart
+                                                    data={sectors.map(s => ({
+                                                        sector: s.sector,
+                                                        etf: s.etf,
+                                                        rsRatio: s.rs_ratio,
+                                                        rsMomentum: s.rs_momentum,
+                                                        quadrant: s.quadrant,
+                                                        trail: s.trail,
+                                                    }))}
+                                                    width={630}
+                                                    height={500}
+                                                    onSectorClick={(s) => drillIntoSector(s.sector)}
+                                                />
+                                            )}
                                         </div>
+                                        {!drillSector && (
                                         <div style={{ overflowX: 'auto' }}>
                                             <table className="data-table">
                                                 <thead>
@@ -565,7 +632,10 @@ export default function Dashboard({ onSymbolClick }) {
                                                 </thead>
                                                 <tbody>
                                                     {sectors.map((s, i) => (
-                                                        <tr key={i}>
+                                                        <tr key={i} onClick={() => drillIntoSector(s.sector)}
+                                                            style={{ cursor: 'pointer' }}
+                                                            onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-tertiary)'}
+                                                            onMouseLeave={e => e.currentTarget.style.background = ''}>
                                                             <td style={{ fontWeight: 600 }}>{s.sector}</td>
                                                             <td className="symbol">{s.etf}</td>
                                                             <td><QuadrantBadge quadrant={s.quadrant} /></td>
@@ -583,6 +653,7 @@ export default function Dashboard({ onSymbolClick }) {
                                                 </tbody>
                                             </table>
                                         </div>
+                                        )}
                                     </div>
                                 ) : (
                                     /* ── v1 fallback: legacy momentum table ── */

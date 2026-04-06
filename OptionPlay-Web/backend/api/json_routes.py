@@ -1195,17 +1195,18 @@ async def get_sectors():
 
         provider = LocalDBProvider()
         service = SectorRSService(provider=provider)
-        sectors = await service.get_all_sector_rs()
+        sectors = await service.get_all_sector_rs_with_trail()
 
         result = []
-        for name, rs in sorted(sectors.items(), key=lambda x: x[1].rs_ratio, reverse=True):
+        for name, data in sorted(sectors.items(), key=lambda x: x[1]["rs_ratio"], reverse=True):
             result.append({
-                "sector": rs.sector,
-                "etf": rs.etf_symbol,
-                "rs_ratio": round(rs.rs_ratio, 2),
-                "rs_momentum": round(rs.rs_momentum, 2),
-                "quadrant": rs.quadrant.value,
-                "score_modifier": rs.score_modifier,
+                "sector": data["sector"],
+                "etf": data["etf_symbol"],
+                "rs_ratio": data["rs_ratio"],
+                "rs_momentum": data["rs_momentum"],
+                "quadrant": data["quadrant"],
+                "score_modifier": data["score_modifier"],
+                "trail": data.get("trail", []),
             })
         return {"sectors": result, "version": "v2"}
     except Exception:
@@ -1230,6 +1231,62 @@ async def get_sectors():
                 "breadth": round(s.breadth_proxy, 3),
             })
         return {"sectors": result, "version": "v1"}
+    except Exception as e:
+        return _error(str(e))
+
+
+@router.get("/stock-rs")
+async def get_stock_rs(sector: str = None, exclude_earnings_days: int = 0):
+    """Stock relative strength — RRG for top liquid stocks vs SPY."""
+    try:
+        from src.services.sector_rs import SectorRSService
+        from src.data_providers.local_db import LocalDBProvider
+
+        provider = LocalDBProvider()
+        service = SectorRSService(provider=provider)
+        # Overfetch when filtering earnings so we can backfill
+        fetch_limit = 25 if exclude_earnings_days > 0 else 10
+        stocks = await service.get_stock_rs_with_trail(limit=fetch_limit, sector=sector)
+
+        # Filter out stocks with earnings within N days
+        if exclude_earnings_days > 0:
+            from datetime import date as _date
+            from src.cache import get_earnings_history_manager
+            em = get_earnings_history_manager()
+            filtered = []
+            for data in stocks:
+                nxt = em.get_next_future_earnings(data["symbol"], search_days=exclude_earnings_days)
+                if nxt is None:
+                    filtered.append(data)
+                else:
+                    days_to = (nxt.earnings_date - _date.today()).days
+                    if days_to > exclude_earnings_days:
+                        filtered.append(data)
+            stocks = filtered
+
+        result = []
+        for data in sorted(stocks, key=lambda x: x["rs_ratio"], reverse=True)[:10]:
+            result.append({
+                "symbol": data["symbol"],
+                "sector": data["sector"],
+                "rs_ratio": data["rs_ratio"],
+                "rs_momentum": data["rs_momentum"],
+                "quadrant": data["quadrant"],
+                "trail": data.get("trail", []),
+                "days_to_earnings": None,
+            })
+
+        # Attach days-to-earnings for display
+        if result:
+            from datetime import date as _date
+            from src.cache import get_earnings_history_manager
+            em = get_earnings_history_manager()
+            for r in result:
+                nxt = em.get_next_future_earnings(r["symbol"], search_days=90)
+                if nxt:
+                    r["days_to_earnings"] = (nxt.earnings_date - _date.today()).days
+
+        return {"stocks": result}
     except Exception as e:
         return _error(str(e))
 

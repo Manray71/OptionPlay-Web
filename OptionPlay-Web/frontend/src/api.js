@@ -105,6 +105,17 @@ export async function fetchSectorsJson() {
     return res.json();
 }
 
+export async function fetchStockRSJson(sector = null, excludeEarningsDays = 0) {
+    const params = new URLSearchParams();
+    if (sector) params.set('sector', sector);
+    if (excludeEarningsDays > 0) params.set('exclude_earnings_days', excludeEarningsDays);
+    const qs = params.toString();
+    const url = qs ? `${API_BASE}/json/stock-rs?${qs}` : `${API_BASE}/json/stock-rs`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Failed to fetch stock RS');
+    return res.json();
+}
+
 export async function fetchRegimeJson() {
     const res = await fetch(`${API_BASE}/json/regime`);
     if (!res.ok) throw new Error('Failed to fetch regime');
