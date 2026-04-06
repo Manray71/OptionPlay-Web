@@ -198,26 +198,34 @@ export default function RRGChart({ data = [], width = 560, height = 420, onSecto
 
                         {/* Tooltip */}
                         {isHov && (() => {
+                            const hasIndustry = !!sector.industry;
                             const hasErn = sector.daysToEarnings != null;
-                            const ttH = hasErn ? 68 : 54;
+                            const lines = 2 + (hasIndustry ? 1 : 0) + (hasErn ? 1 : 0);
+                            const ttH = 20 + lines * 14;
+                            const ttW = 170;
+                            // Flip tooltip left if too close to right edge
+                            const flipX = dotX + 12 + ttW > width - 4;
+                            const ttX = flipX ? dotX - 12 - ttW : dotX + 12;
+                            const ttY = dotY - 38;
+                            let lineY = ttY + 16;
                             return (
-                            <g>
-                                <rect x={dotX + 12} y={dotY - 38} width={145} height={ttH} rx={6}
+                            <g style={{ cursor: 'pointer' }}>
+                                <rect x={ttX} y={ttY} width={ttW} height={ttH} rx={6}
                                     fill="rgba(10, 14, 26, 0.95)" stroke="var(--border-subtle, rgba(71,85,105,0.4))" strokeWidth={1} />
-                                <text x={dotX + 20} y={dotY - 22}
-                                    style={{ fill: '#f1f5f9', fontSize: 11, fontWeight: 600, fontFamily: 'Inter, sans-serif' }}>
+                                <text x={ttX + 8} y={lineY}
+                                    style={{ fill: color, fontSize: 10, fontWeight: 600, fontFamily: 'Inter, sans-serif', letterSpacing: '0.3px' }}>
                                     {sector.sector}
                                 </text>
-                                <text x={dotX + 20} y={dotY - 8}
-                                    style={{ fill: 'rgba(255,255,255,0.6)', fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }}>
-                                    Ratio: {sector.rsRatio?.toFixed(2)}
+                                <text x={ttX + 8} y={lineY += 14}
+                                    style={{ fill: '#f1f5f9', fontSize: 11, fontWeight: 700, fontFamily: 'Inter, sans-serif' }}>
+                                    {sector.etf}{hasIndustry ? ` — ${sector.industry}` : ''}
                                 </text>
-                                <text x={dotX + 20} y={dotY + 6}
+                                <text x={ttX + 8} y={lineY += 14}
                                     style={{ fill: 'rgba(255,255,255,0.6)', fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }}>
-                                    Mom: {sector.rsMomentum?.toFixed(2)}
+                                    Ratio: {sector.rsRatio?.toFixed(2)}  Mom: {sector.rsMomentum?.toFixed(2)}
                                 </text>
                                 {hasErn && (
-                                    <text x={dotX + 20} y={dotY + 20}
+                                    <text x={ttX + 8} y={lineY += 14}
                                         style={{ fill: sector.daysToEarnings <= 45 ? '#f59e0b' : 'rgba(255,255,255,0.6)', fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }}>
                                         Earnings: {sector.daysToEarnings}d
                                     </text>

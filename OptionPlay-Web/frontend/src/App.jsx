@@ -23,8 +23,13 @@ const NAV_ITEMS = [
 ];
 
 function App() {
-    const [activePage, setActivePage] = useState('dashboard');
-    const [analysisSymbol, setAnalysisSymbol] = useState('');
+    // Read initial page/symbol from URL query params (for new-window links)
+    const _params = new URLSearchParams(window.location.search);
+    const _initPage = _params.get('page') || 'dashboard';
+    const _initSymbol = _params.get('symbol') || '';
+
+    const [activePage, setActivePage] = useState(_initPage);
+    const [analysisSymbol, setAnalysisSymbol] = useState(_initSymbol);
 
     // Lifted scanner state so results persist across page switches
     const [scanResults, setScanResults] = useState(null);

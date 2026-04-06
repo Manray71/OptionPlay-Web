@@ -196,6 +196,10 @@ export default function Dashboard({ onSymbolClick }) {
     const [vixChangePct, setVixChangePct] = useState(null);
     const [regime, setRegime] = useState(FALLBACK_REGIME);
     const [market, setMarket] = useState(FALLBACK_MARKET);
+    const [marketOpen, setMarketOpen] = useState(true);
+    const [marketSession, setMarketSession] = useState('market_open');
+    const [vixDataSource, setVixDataSource] = useState('live');
+    const [vixAsOf, setVixAsOf] = useState(null);
     const [events, setEvents] = useState([]);
     const [sectors, setSectors] = useState([]);
     const [stockRS, setStockRS] = useState([]);
@@ -209,6 +213,10 @@ export default function Dashboard({ onSymbolClick }) {
     const applyData = useCallback((data) => {
         if (data.vix != null) { setVix(data.vix); setVixChange(data.vixChange ?? null); setVixChangePct(data.vixChangePct ?? null); setRegime(data.regime); }
         if (data.market?.length) setMarket(data.market);
+        if (data.marketOpen != null) setMarketOpen(data.marketOpen);
+        if (data.marketSession) setMarketSession(data.marketSession);
+        if (data.vixDataSource) setVixDataSource(data.vixDataSource);
+        if (data.vixAsOf) setVixAsOf(data.vixAsOf);
         if (data.events) setEvents(data.events);
         if (data.sectors) setSectors(data.sectors);
         if (data.regimeParams) setRegimeParams(data.regimeParams);
@@ -237,10 +245,15 @@ export default function Dashboard({ onSymbolClick }) {
             data.vixChange = results[0].value.change;
             data.vixChangePct = results[0].value.change_pct;
             data.regime = results[0].value.regime;
+            data.vixDataSource = results[0].value.data_source || 'live';
+            data.vixAsOf = results[0].value.as_of || null;
+            if (results[0].value.market_open != null) data.marketOpen = results[0].value.market_open;
         } else { usedFallback = true; }
 
         if (results[1].status === 'fulfilled' && results[1].value.quotes?.length) {
             data.market = results[1].value.quotes;
+            if (results[1].value.market_open != null) data.marketOpen = results[1].value.market_open;
+            if (results[1].value.market_session) data.marketSession = results[1].value.market_session;
         } else { usedFallback = true; }
 
         if (results[2].status === 'fulfilled' && results[2].value.events) data.events = results[2].value.events;
@@ -353,6 +366,33 @@ export default function Dashboard({ onSymbolClick }) {
 
                 {!loading && (
                     <>
+                        {/* ─── Market Session Banner ─── */}
+                        {!marketOpen && (
+                            <div className="analysis-section fade-in" style={{ marginBottom: 0 }}>
+                                <div style={{
+                                    padding: '8px 16px',
+                                    background: marketSession === 'pre_market' ? 'rgba(99, 102, 241, 0.08)'
+                                        : marketSession === 'post_market' ? 'rgba(99, 102, 241, 0.08)'
+                                        : 'rgba(139, 92, 246, 0.08)',
+                                    border: `1px solid ${marketSession === 'pre_market' || marketSession === 'post_market' ? 'rgba(99, 102, 241, 0.25)' : 'rgba(139, 92, 246, 0.25)'}`,
+                                    borderRadius: 8,
+                                    fontSize: 12,
+                                    color: 'var(--text-accent)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 8,
+                                }}>
+                                    <Info size={13} />
+                                    {marketSession === 'pre_market'
+                                        ? 'Pre-Market — prices may include pre-market quotes'
+                                        : marketSession === 'post_market'
+                                        ? 'After Hours — prices may include post-market quotes'
+                                        : 'Market closed — showing last trading day closing prices'}
+                                    {vixAsOf && marketSession === 'closed' && <span style={{ color: 'var(--text-muted)' }}>({vixAsOf})</span>}
+                                </div>
+                            </div>
+                        )}
+
                         {/* ─── Top Stats Row ─── */}
                         <div className="grid-4 analysis-section fade-in">
                             <div className="stat-card" style={{ textAlign: 'center' }}>
@@ -456,11 +496,16 @@ export default function Dashboard({ onSymbolClick }) {
                                                     const color = pct > 0 ? 'var(--green)' : pct < 0 ? 'var(--red)' : 'var(--text-muted)';
                                                     const Icon = pct > 0 ? TrendingUp : pct < 0 ? TrendingDown : Minus;
                                                     const fmtPrice = m.price >= 10 ? m.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : m.price.toFixed(4);
+                                                    const isDbFallback = m.data_source === 'local_db';
+                                                    const sessionLabel = m.session === 'pre_market' ? 'Pre' : m.session === 'post_market' ? 'AH' : null;
                                                     return (
                                                         <tr key={m.symbol}>
                                                             <td className="symbol">{m.symbol}</td>
                                                             <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>{m.name || m.symbol}</td>
-                                                            <td style={{ textAlign: 'right', fontFamily: "'JetBrains Mono', monospace" }}>{fmtPrice}</td>
+                                                            <td style={{ textAlign: 'right', fontFamily: "'JetBrains Mono', monospace" }} title={isDbFallback && m.as_of ? `Close ${m.as_of}` : m.session === 'pre_market' ? 'Pre-market price' : m.session === 'post_market' ? 'After-hours price' : undefined}>
+                                                                {fmtPrice}
+                                                                {sessionLabel && <span style={{ fontSize: 9, color: 'var(--text-accent)', marginLeft: 4, fontWeight: 600 }}>{sessionLabel}</span>}
+                                                            </td>
                                                             <td style={{ textAlign: 'right', color, fontWeight: 600 }}>{fmtChg(pct)}</td>
                                                             <td><Icon size={14} style={{ color }} /></td>
                                                         </tr>
@@ -590,6 +635,7 @@ export default function Dashboard({ onSymbolClick }) {
                                                     data={stockRS.map(s => ({
                                                         sector: s.sector,
                                                         etf: s.symbol,
+                                                        industry: s.industry || null,
                                                         rsRatio: s.rs_ratio,
                                                         rsMomentum: s.rs_momentum,
                                                         quadrant: s.quadrant,
@@ -598,6 +644,10 @@ export default function Dashboard({ onSymbolClick }) {
                                                     }))}
                                                     width={630}
                                                     height={500}
+                                                    onSectorClick={(s) => {
+                                                        const url = `${window.location.origin}?page=analysis&symbol=${s.etf}`;
+                                                        window.open(url, '_blank');
+                                                    }}
                                                 />
                                             ) : drillSector && !drillLoading ? (
                                                 <div style={{ textAlign: 'center', padding: '48px 24px', color: 'var(--text-muted)', fontSize: 13 }}>

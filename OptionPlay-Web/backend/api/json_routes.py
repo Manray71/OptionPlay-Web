@@ -14,7 +14,7 @@ from .auth import validate_symbol
 from .routes import get_server
 from .news_sentiment import enrich_news_sentiment
 
-_SYMBOL_RE = re.compile(r"^[A-Z]{1,6}([.\-][A-Z]{1,2})?!?$")
+_SYMBOL_RE = re.compile(r"^[A-Z0-9]{1,6}([.\-][A-Z]{1,2})?!?$")
 
 router = APIRouter()
 
@@ -88,6 +88,67 @@ def _vix_regime(vix: float) -> str:
 
 def _error(msg: str, status: int = 503) -> JSONResponse:
     return JSONResponse({"error": msg}, status_code=status)
+
+
+def _is_us_market_open() -> bool:
+    """Check if US stock market is currently open (Mon-Fri 9:30-16:00 ET)."""
+    return _us_market_session() == "market_open"
+
+
+def _us_market_session() -> str:
+    """Return current US market session: 'pre_market', 'market_open', 'post_market', or 'closed'."""
+    from datetime import datetime
+    try:
+        from zoneinfo import ZoneInfo
+    except ImportError:
+        from backports.zoneinfo import ZoneInfo
+    et = datetime.now(ZoneInfo("America/New_York"))
+    if et.weekday() >= 5:  # Sat/Sun
+        return "closed"
+    mins = et.hour * 60 + et.minute
+    if 240 <= mins < 570:    # 4:00-9:30 ET
+        return "pre_market"
+    if 570 <= mins < 960:    # 9:30-16:00 ET
+        return "market_open"
+    if 960 <= mins < 1200:   # 16:00-20:00 ET
+        return "post_market"
+    return "closed"
+
+
+DB_PATH = os.path.expanduser("~/.optionplay/trades.db")
+
+
+def _db_last_close(symbol: str):
+    """Fetch last closing price from daily_prices. Returns (close, date) or (None, None)."""
+    import sqlite3
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        row = conn.execute(
+            "SELECT close, quote_date FROM daily_prices WHERE symbol = ? ORDER BY quote_date DESC LIMIT 1",
+            (symbol,),
+        ).fetchone()
+        conn.close()
+        if row and row[0]:
+            return float(row[0]), row[1]
+    except Exception:
+        pass
+    return None, None
+
+
+def _db_last_vix():
+    """Fetch last VIX value from vix_data. Returns (value, date) or (None, None)."""
+    import sqlite3
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        row = conn.execute(
+            "SELECT value, date FROM vix_data ORDER BY date DESC LIMIT 1"
+        ).fetchone()
+        conn.close()
+        if row and row[0]:
+            return float(row[0]), row[1]
+    except Exception:
+        pass
+    return None, None
 
 
 # Default TWS ports (paper=7497, live=7496, gateway=4001)
@@ -204,43 +265,63 @@ async def _fetch_ibkr_portfolio():
 @router.get("/vix")
 async def get_vix():
     server = await get_server()
-    if not server:
-        return _error("OptionPlay server not available")
+    market_open = _is_us_market_open()
+    data_source = "live"
+    vix = None
+    vix_date = None
 
+    # 1. Try live VIX from OptionPlay server (IBKR/provider chain)
+    if server:
+        try:
+            vix = await server.handlers.vix.get_vix()
+        except Exception:
+            pass
+
+    # 2. Fallback: local DB (last trading day close)
+    if vix is None:
+        vix, vix_date = _db_last_vix()
+        data_source = "local_db"
+
+    if vix is None:
+        return _error("VIX data unavailable")
+
+    # Fetch previous close for change calculation
+    vix_change = None
+    vix_change_pct = None
     try:
-        vix = await server.handlers.vix.get_vix()
-        if vix is None:
-            return _error("VIX data unavailable")
+        import yfinance as yf
+        loop = asyncio.get_event_loop()
+        def _fetch_vix_prev_close():
+            t = yf.Ticker("^VIX")
+            return t.fast_info.previous_close
+        prev_close = await loop.run_in_executor(None, _fetch_vix_prev_close)
+        if prev_close:
+            vix_change = round(vix - prev_close, 2)
+            vix_change_pct = round((vix - prev_close) / prev_close * 100, 2)
+    except Exception:
+        pass
 
-        # Fetch previous close for change calculation
-        vix_change = None
-        try:
-            import yfinance as yf
-            loop = asyncio.get_event_loop()
-            def _fetch_vix_prev_close():
-                t = yf.Ticker("^VIX")
-                return t.fast_info.previous_close
-            prev_close = await loop.run_in_executor(None, _fetch_vix_prev_close)
-            if prev_close:
-                vix_change = round(vix - prev_close, 2)
-                vix_change_pct = round((vix - prev_close) / prev_close * 100, 2)
-        except Exception:
-            pass
+    resp = {
+        "vix": round(vix, 2),
+        "regime": _vix_regime(vix),
+        "change": vix_change,
+        "change_pct": vix_change_pct,
+        "market_open": market_open,
+        "data_source": data_source,
+    }
+    if vix_date:
+        resp["as_of"] = vix_date
 
-        resp = {"vix": round(vix, 2), "regime": _vix_regime(vix), "change": vix_change, "change_pct": vix_change_pct if vix_change is not None else None}
+    # Enrich with v2 regime parameters
+    try:
+        from src.services.vix_regime import get_regime_params
+        params = get_regime_params(vix)
+        resp["min_score"] = params.min_score
+        resp["max_positions"] = params.max_positions
+    except Exception:
+        pass
 
-        # Enrich with v2 regime parameters
-        try:
-            from src.services.vix_regime import get_regime_params
-            params = get_regime_params(vix)
-            resp["min_score"] = params.min_score
-            resp["max_positions"] = params.max_positions
-        except Exception:
-            pass
-
-        return resp
-    except Exception as e:
-        return _error(str(e))
+    return resp
 
 
 @router.get("/regime")
@@ -302,7 +383,11 @@ SYMBOL_NAMES = {
 
 
 def _yfinance_quote(yf_symbol: str):
-    """Fetch a single quote from yfinance. Returns (price, change_pct) or (None, None)."""
+    """Fetch quote from yfinance with pre/post-market support.
+
+    Returns (price, change_pct, session) where session is
+    'pre_market', 'post_market', or 'regular'.
+    """
     try:
         import yfinance as yf
 
@@ -310,18 +395,37 @@ def _yfinance_quote(yf_symbol: str):
         info = t.fast_info
         price = getattr(info, "last_price", None)
         prev = getattr(info, "previous_close", None)
+        session = "regular"
+
+        # Check for extended-hours prices (available via full info dict)
+        if not _is_us_market_open():
+            try:
+                full = t.info
+                pre = full.get("preMarketPrice")
+                post = full.get("postMarketPrice")
+                if pre and pre > 0:
+                    price = pre
+                    prev = full.get("regularMarketPreviousClose", prev)
+                    session = "pre_market"
+                elif post and post > 0:
+                    price = post
+                    prev = full.get("regularMarketPreviousClose", prev)
+                    session = "post_market"
+            except Exception:
+                pass
+
+        change_pct = None
         if price and prev and prev > 0:
             change_pct = round((price - prev) / prev * 100, 2)
-        else:
-            change_pct = None
-        return price, change_pct
+        return price, change_pct, session
     except Exception:
-        return None, None
+        return None, None, "regular"
 
 
 @router.post("/quotes")
 async def get_quotes(req: QuotesRequest):
     server = await get_server()
+    market_open = _is_us_market_open()
 
     loop = asyncio.get_event_loop()
     quotes = []
@@ -330,6 +434,8 @@ async def get_quotes(req: QuotesRequest):
         sym_upper = sym.upper()
         price = None
         change_pct = None
+        data_source = None
+        as_of = None
 
         # 1. Try IBKR via OptionPlay server (US equities not in yfinance map)
         if server and sym_upper not in YFINANCE_MAP:
@@ -337,31 +443,50 @@ async def get_quotes(req: QuotesRequest):
                 quote = await server.handlers.quote._get_quote_cached(sym_upper)
                 if quote:
                     price = quote.last
+                    data_source = "live"
             except Exception:
                 pass
 
         # 2. yfinance for change_pct (always) or price (if IBKR failed / non-US)
         yf_sym = YFINANCE_MAP.get(sym_upper, sym_upper)
+        session = "regular"
         try:
-            yf_price, yf_change = await loop.run_in_executor(
+            yf_price, yf_change, yf_session = await loop.run_in_executor(
                 None, _yfinance_quote, yf_sym
             )
             if price is None and yf_price is not None:
                 price = yf_price
+                data_source = "yfinance"
+                session = yf_session
             if yf_change is not None:
                 change_pct = yf_change
         except Exception:
             pass
 
+        # 3. Fallback: local DB last close (when market closed / providers unavailable)
+        if price is None and sym_upper not in YFINANCE_MAP:
+            db_price, db_date = _db_last_close(sym_upper)
+            if db_price is not None:
+                price = db_price
+                data_source = "local_db"
+                as_of = db_date
+
         if price is not None:
-            quotes.append({
+            entry = {
                 "symbol": sym_upper,
                 "name": SYMBOL_NAMES.get(sym_upper, sym_upper),
                 "price": round(price, 2) if price > 10 else round(price, 4),
                 "change_pct": change_pct,
-            })
+            }
+            if data_source == "local_db":
+                entry["data_source"] = "local_db"
+                if as_of:
+                    entry["as_of"] = as_of
+            if session != "regular":
+                entry["session"] = session
+            quotes.append(entry)
 
-    return {"quotes": quotes}
+    return {"quotes": quotes, "market_open": market_open, "market_session": _us_market_session()}
 
 
 @router.post("/scan")
@@ -622,8 +747,20 @@ async def analyze_symbol(symbol: str):
         scan_handler = server.handlers.scan
 
         # Get quote for current price
-        quote = await server.handlers.quote._get_quote_cached(symbol)
-        price = quote.last if quote else None
+        price = None
+        price_source = "live"
+        try:
+            quote = await server.handlers.quote._get_quote_cached(symbol)
+            if quote:
+                price = quote.last
+        except Exception:
+            pass
+        # Fallback: local DB last close
+        if price is None:
+            db_price, _ = _db_last_close(symbol)
+            if db_price is not None:
+                price = db_price
+                price_source = "local_db"
 
         # Run multi-strategy analysis (returns signals directly)
         scanner = scan_handler._get_multi_scanner(
@@ -912,7 +1049,7 @@ async def analyze_symbol(symbol: str):
         # ── Falling Knife Detection ──
         falling_knife = _detect_falling_knife(prices, volumes, highs)
 
-        return {
+        resp = {
             "symbol": symbol,
             "price": price,
             "strategies": strategies,
@@ -924,7 +1061,11 @@ async def analyze_symbol(symbol: str):
             "earnings_date": earnings_date,
             "days_to_earnings": days_to_earnings,
             "falling_knife": falling_knife,
+            "market_open": _is_us_market_open(),
         }
+        if price_source == "local_db":
+            resp["price_source"] = "local_db"
+        return resp
     except Exception as e:
         return _error(str(e))
 
@@ -1264,11 +1405,24 @@ async def get_stock_rs(sector: str = None, exclude_earnings_days: int = 0):
                         filtered.append(data)
             stocks = filtered
 
+        # Build industry lookup from fundamentals
+        industry_map = {}
+        try:
+            from src.cache import get_fundamentals_manager
+            fm = get_fundamentals_manager()
+            for data in stocks:
+                f = fm.get_fundamentals(data["symbol"])
+                if f and f.industry:
+                    industry_map[data["symbol"]] = f.industry
+        except Exception:
+            pass
+
         result = []
         for data in sorted(stocks, key=lambda x: x["rs_ratio"], reverse=True)[:10]:
             result.append({
                 "symbol": data["symbol"],
                 "sector": data["sector"],
+                "industry": industry_map.get(data["symbol"]),
                 "rs_ratio": data["rs_ratio"],
                 "rs_momentum": data["rs_momentum"],
                 "quadrant": data["quadrant"],
