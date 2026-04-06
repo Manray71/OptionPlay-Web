@@ -8,6 +8,11 @@ import os
 # This assumes OptionPlay-Web is a sibling of OptionPlay
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../OptionPlay")))
 
+# Disable direct IBKR connections from OptionPlay handlers —
+# Web backend uses subprocess for IBKR portfolio instead.
+# Direct ib_insync connections trigger Gateway write-access warnings.
+os.environ["OPTIONPLAY_NO_IBKR"] = "1"
+
 # ib_insync/eventkit requires a running event loop at import time (Python 3.14+)
 # and nest_asyncio for coexistence with uvicorn's event loop.
 try:
@@ -41,7 +46,6 @@ async def get_server():
     global server_instance
     if server_instance is None and OptionPlayServer:
         server_instance = OptionPlayServer()
-        # Initialize connection if needed, though most methods handle it
     return server_instance
 
 @router.get("/vix")

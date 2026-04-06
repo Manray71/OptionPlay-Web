@@ -151,13 +151,13 @@ def _db_last_vix():
     return None, None
 
 
-# Default TWS ports (paper=7497, live=7496, gateway=4001)
+# IBKR Gateway port (default 4001; override via IBKR_PORT env var)
 IBKR_HOST = "127.0.0.1"
-IBKR_PORT = 7497
+IBKR_PORT = int(os.environ.get("IBKR_PORT", 4001))
 
 
 def _ibkr_news_sync(symbol: str, days: int = 5, count: int = 5):
-    """Fetch IBKR news via subprocess using OptionPlay's venv."""
+    """Fetch IBKR news via subprocess — direct Gateway connection (readonly)."""
     import socket
     import subprocess
     import json as _json
@@ -173,7 +173,9 @@ def _ibkr_news_sync(symbol: str, days: int = 5, count: int = 5):
     optionplay_dir = os.path.abspath(
         os.path.join(os.path.dirname(__file__), "../../../OptionPlay")
     )
-    python = os.path.join(optionplay_dir, "venv", "bin", "python")
+    python = os.path.join(optionplay_dir, ".venv", "bin", "python")
+    if not os.path.exists(python):
+        python = os.path.join(optionplay_dir, "venv", "bin", "python")
     if not os.path.exists(python):
         return None
 
@@ -185,12 +187,12 @@ def _ibkr_news_sync(symbol: str, days: int = 5, count: int = 5):
             [
                 python, script_path,
                 "--symbol", str(symbol),
+                "--host", str(IBKR_HOST),
+                "--port", str(int(IBKR_PORT)),
                 "--days", str(int(days)),
                 "--count", str(int(count)),
-                "--optionplay-dir", optionplay_dir,
             ],
             capture_output=True, text=True, timeout=20,
-            cwd=optionplay_dir,
         )
         if result.returncode == 0 and result.stdout.strip():
             return _json.loads(result.stdout.strip())
@@ -226,7 +228,9 @@ def _ibkr_portfolio_sync():
     optionplay_dir = os.path.abspath(
         os.path.join(os.path.dirname(__file__), "../../../OptionPlay")
     )
-    python = os.path.join(optionplay_dir, "venv", "bin", "python")
+    python = os.path.join(optionplay_dir, ".venv", "bin", "python")
+    if not os.path.exists(python):
+        python = os.path.join(optionplay_dir, "venv", "bin", "python")
     if not os.path.exists(python):
         return None
 
@@ -260,22 +264,73 @@ async def _fetch_ibkr_portfolio():
         return None
 
 
+def _ibkr_quotes_sync(symbols: list[str]):
+    """Fetch IBKR quotes via subprocess using OptionPlay's venv."""
+    import socket
+    import subprocess
+    import json as _json
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(2)
+    if sock.connect_ex((IBKR_HOST, IBKR_PORT)) != 0:
+        sock.close()
+        return None
+    sock.close()
+
+    optionplay_dir = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "../../../OptionPlay")
+    )
+    python = os.path.join(optionplay_dir, ".venv", "bin", "python")
+    if not os.path.exists(python):
+        python = os.path.join(optionplay_dir, "venv", "bin", "python")
+    if not os.path.exists(python):
+        return None
+
+    script_path = os.path.join(
+        os.path.dirname(__file__), "..", "scripts", "ibkr_quote.py"
+    )
+    try:
+        result = subprocess.run(
+            [
+                python, script_path,
+                "--host", str(IBKR_HOST),
+                "--port", str(int(IBKR_PORT)),
+                "--symbols", ",".join(symbols),
+            ],
+            capture_output=True, text=True, timeout=15,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            data = _json.loads(result.stdout.strip())
+            return data.get("quotes", {})
+    except Exception:
+        pass
+    return None
+
+
+async def _fetch_ibkr_quotes(symbols: list[str]):
+    """Async wrapper: runs IBKR quote fetch in thread pool."""
+    loop = asyncio.get_event_loop()
+    try:
+        return await loop.run_in_executor(None, _ibkr_quotes_sync, symbols)
+    except Exception:
+        return None
+
+
 # ── Endpoints ──
 
 @router.get("/vix")
 async def get_vix():
-    server = await get_server()
     market_open = _is_us_market_open()
     data_source = "live"
     vix = None
     vix_date = None
 
-    # 1. Try live VIX from OptionPlay server (IBKR/provider chain)
-    if server:
-        try:
-            vix = await server.handlers.vix.get_vix()
-        except Exception:
-            pass
+    # 1. Try live VIX from IBKR Gateway (subprocess)
+    vix_prev_close = None
+    ibkr_quotes = await _fetch_ibkr_quotes(["VIX"])
+    if ibkr_quotes and "VIX" in ibkr_quotes:
+        vix = ibkr_quotes["VIX"]["price"]
+        vix_prev_close = ibkr_quotes["VIX"].get("prev_close")
 
     # 2. Fallback: local DB (last trading day close)
     if vix is None:
@@ -285,21 +340,23 @@ async def get_vix():
     if vix is None:
         return _error("VIX data unavailable")
 
-    # Fetch previous close for change calculation
+    # Calculate change from IBKR prev_close or yfinance fallback
     vix_change = None
     vix_change_pct = None
-    try:
-        import yfinance as yf
-        loop = asyncio.get_event_loop()
-        def _fetch_vix_prev_close():
-            t = yf.Ticker("^VIX")
-            return t.fast_info.previous_close
-        prev_close = await loop.run_in_executor(None, _fetch_vix_prev_close)
-        if prev_close:
-            vix_change = round(vix - prev_close, 2)
-            vix_change_pct = round((vix - prev_close) / prev_close * 100, 2)
-    except Exception:
-        pass
+    prev_close = vix_prev_close
+    if prev_close is None:
+        try:
+            import yfinance as yf
+            loop = asyncio.get_event_loop()
+            def _fetch_vix_prev_close():
+                t = yf.Ticker("^VIX")
+                return t.fast_info.previous_close
+            prev_close = await loop.run_in_executor(None, _fetch_vix_prev_close)
+        except Exception:
+            pass
+    if prev_close and prev_close > 0:
+        vix_change = round(vix - prev_close, 2)
+        vix_change_pct = round((vix - prev_close) / prev_close * 100, 2)
 
     resp = {
         "vix": round(vix, 2),
@@ -327,12 +384,18 @@ async def get_vix():
 @router.get("/regime")
 async def get_regime():
     """VIX Regime v2 — interpolated trading parameters."""
-    server = await get_server()
-    if not server:
-        return _error("OptionPlay server not available")
+    vix = None
+
+    # Try IBKR Gateway first
+    ibkr_quotes = await _fetch_ibkr_quotes(["VIX"])
+    if ibkr_quotes and "VIX" in ibkr_quotes:
+        vix = ibkr_quotes["VIX"]["price"]
+
+    # Fallback to local DB
+    if vix is None:
+        vix, _ = _db_last_vix()
 
     try:
-        vix = await server.handlers.vix.get_vix()
         if vix is None:
             return _error("VIX data unavailable")
 
@@ -424,11 +487,20 @@ def _yfinance_quote(yf_symbol: str):
 
 @router.post("/quotes")
 async def get_quotes(req: QuotesRequest):
-    server = await get_server()
     market_open = _is_us_market_open()
 
     loop = asyncio.get_event_loop()
     quotes = []
+
+    # Split symbols: US equities go to IBKR, mapped symbols go to yfinance
+    us_symbols = [s.upper() for s in req.symbols if s.upper() not in YFINANCE_MAP]
+    ibkr_prices = {}
+
+    # 1. Batch-fetch US equity quotes from IBKR Gateway (subprocess)
+    if us_symbols:
+        ibkr_data = await _fetch_ibkr_quotes(us_symbols)
+        if ibkr_data:
+            ibkr_prices = ibkr_data
 
     for sym in req.symbols:
         sym_upper = sym.upper()
@@ -437,15 +509,14 @@ async def get_quotes(req: QuotesRequest):
         data_source = None
         as_of = None
 
-        # 1. Try IBKR via OptionPlay server (US equities not in yfinance map)
-        if server and sym_upper not in YFINANCE_MAP:
-            try:
-                quote = await server.handlers.quote._get_quote_cached(sym_upper)
-                if quote:
-                    price = quote.last
-                    data_source = "live"
-            except Exception:
-                pass
+        # 1a. Use IBKR quote if available
+        if sym_upper in ibkr_prices:
+            q = ibkr_prices[sym_upper]
+            price = q["price"]
+            data_source = "live"
+            prev = q.get("prev_close")
+            if prev and prev > 0:
+                change_pct = round((price - prev) / prev * 100, 2)
 
         # 2. yfinance for change_pct (always) or price (if IBKR failed / non-US)
         yf_sym = YFINANCE_MAP.get(sym_upper, sym_upper)
@@ -458,7 +529,7 @@ async def get_quotes(req: QuotesRequest):
                 price = yf_price
                 data_source = "yfinance"
                 session = yf_session
-            if yf_change is not None:
+            if change_pct is None and yf_change is not None:
                 change_pct = yf_change
         except Exception:
             pass
@@ -746,16 +817,12 @@ async def analyze_symbol(symbol: str):
         symbol = symbol.upper()
         scan_handler = server.handlers.scan
 
-        # Get quote for current price
+        # Get quote for current price (IBKR Gateway → local DB fallback)
         price = None
         price_source = "live"
-        try:
-            quote = await server.handlers.quote._get_quote_cached(symbol)
-            if quote:
-                price = quote.last
-        except Exception:
-            pass
-        # Fallback: local DB last close
+        ibkr_q = await _fetch_ibkr_quotes([symbol])
+        if ibkr_q and symbol in ibkr_q:
+            price = ibkr_q[symbol]["price"]
         if price is None:
             db_price, _ = _db_last_close(symbol)
             if db_price is not None:
@@ -895,8 +962,11 @@ async def analyze_symbol(symbol: str):
             current_price = price
             if current_price:
                 # VIX + regime for spread width decisions
+                vix_q = await _fetch_ibkr_quotes(["VIX"])
+                vix = vix_q["VIX"]["price"] if vix_q and "VIX" in vix_q else None
+                if vix is None:
+                    vix, _ = _db_last_vix()
                 analysis_handler = server.handlers.analysis
-                vix = await server.handlers.vix.get_vix()
                 regime = analysis_handler._ctx.vix_selector.get_regime(vix) if vix else None
 
                 # Support levels from lows
@@ -1210,6 +1280,38 @@ async def get_portfolio_positions(status: str = "all"):
             positions = [p for p in positions if p.get("status") == "open"]
         elif status == "closed":
             positions = [p for p in positions if p.get("status") == "closed"]
+
+        # Enrich with live underlying prices from IBKR Gateway
+        open_symbols = list({
+            p["symbol"] for p in positions
+            if p.get("status") == "open" and p.get("strategy") != "Stock"
+        })
+        underlying_prices = {}
+        if open_symbols:
+            ibkr_quotes = await _fetch_ibkr_quotes(open_symbols)
+            if ibkr_quotes:
+                underlying_prices = {
+                    sym: q["price"] for sym, q in ibkr_quotes.items() if q.get("price")
+                }
+
+        for p in positions:
+            sym = p.get("symbol")
+            price = underlying_prices.get(sym)
+            if price and p.get("status") == "open":
+                p["underlying_price"] = round(price, 2)
+
+                # Breakeven for credit spreads (Bull Put: short_strike - credit)
+                short_s = p.get("short_strike")
+                nc = p.get("net_credit")
+                if short_s and nc and nc > 0:
+                    p["breakeven"] = round(short_s - nc, 2)
+                    p["distance_pct"] = round((price - short_s) / price * 100, 1)
+
+                # % of max profit captured (from unrealized P&L)
+                upnl = p.get("unrealized_pnl", 0) or 0
+                mp = p.get("max_profit", 0) or 0
+                if mp > 0:
+                    p["pnl_pct_of_max"] = round(upnl / mp * 100, 1)
 
         return {"positions": positions, "source": "ibkr"}
 
@@ -1593,17 +1695,17 @@ async def log_shadow_trade(req: ShadowLogRequest):
     vix_at_log = None
     regime_at_log = None
     try:
-        server = await get_server()
-        if server:
-            vix_at_log = await server.handlers.vix.get_vix()
-            if vix_at_log is not None:
-                try:
-                    from src.services.vix_regime import _classify_regime
-                    regime_at_log = _classify_regime(vix_at_log).value
-                except ImportError:
-                    ctx = server.handlers.analysis._ctx
-                    regime = ctx.vix_selector.get_regime(vix_at_log)
-                    regime_at_log = regime.value if hasattr(regime, "value") else str(regime)
+        vix_q = await _fetch_ibkr_quotes(["VIX"])
+        if vix_q and "VIX" in vix_q:
+            vix_at_log = vix_q["VIX"]["price"]
+        if vix_at_log is None:
+            vix_at_log, _ = _db_last_vix()
+        if vix_at_log is not None:
+            try:
+                from src.services.vix_regime import _classify_regime
+                regime_at_log = _classify_regime(vix_at_log).value
+            except ImportError:
+                pass
     except Exception:
         pass
 

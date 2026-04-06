@@ -62,7 +62,11 @@ function apiPositionToPortfolio(p) {
             status: statusVal,
             maxProfit: p.max_profit,
             maxLoss: p.max_loss,
-            noLivePnl: true,
+            unrealizedPnl: p.unrealized_pnl ?? null,
+            underlyingPrice: p.underlying_price ?? null,
+            breakeven: p.breakeven ?? null,
+            distancePct: p.distance_pct ?? null,
+            pnlPctOfMax: p.pnl_pct_of_max ?? null,
         };
     }
 
@@ -126,7 +130,8 @@ function isCredit(p) {
 }
 
 function positionPnlPerContract(p) {
-    if (p.noLivePnl) return null;
+    // IBKR positions: use unrealizedPnl directly (already total, not per-contract)
+    if (p.unrealizedPnl != null) return null; // handled by positionPnlTotal
     if (isCredit(p)) {
         return (p.credit - (p.closedAt ?? p.currentValue ?? 0)) * 100;
     }
@@ -134,12 +139,16 @@ function positionPnlPerContract(p) {
 }
 
 function positionPnlTotal(p) {
+    // IBKR positions: unrealizedPnl is already the total P&L
+    if (p.unrealizedPnl != null) return p.unrealizedPnl;
     const pnl = positionPnlPerContract(p);
     if (pnl == null) return null;
     return pnl * p.qty;
 }
 
 function positionPnlPct(p) {
+    // IBKR positions: use pnlPctOfMax directly
+    if (p.pnlPctOfMax != null) return p.pnlPctOfMax;
     const pnl = positionPnlPerContract(p);
     if (pnl == null) return null;
     if (isCredit(p)) {
@@ -290,6 +299,8 @@ export default function Portfolio() {
     const totalCredit = allOpen.filter(p => isCredit(p)).reduce((sum, p) => sum + (p.credit ?? 0) * 100 * p.qty, 0);
     const totalMaxProfit = allOpen.reduce((sum, p) => sum + (p.maxProfit ?? (p.credit ?? 0) * 100 * p.qty), 0);
     const totalMaxLoss = allOpen.reduce((sum, p) => sum + (p.maxLoss ?? maxRisk(p)), 0);
+    const totalUnrealizedPnl = allOpen.reduce((sum, p) => sum + (p.unrealizedPnl ?? 0), 0);
+    const hasLivePnl = allOpen.some(p => p.unrealizedPnl != null);
 
     // Dynamic type list from actual positions
     const activeTypes = [...new Set(allPositions.map(p => p.type))];
@@ -312,17 +323,21 @@ export default function Portfolio() {
                 {/* Summary Cards */}
                 <div className="grid-4 fade-in" style={{ marginBottom: 20 }}>
                     <div className="stat-card">
-                        <div className="stat-label">Open Spreads</div>
+                        <div className="stat-label">Open Positions</div>
                         <div className="stat-value indigo">{allOpen.length}</div>
                         <div className="stat-change" style={{ color: 'var(--text-muted)' }}>
                             {allOpen.filter(p => p.type === 'bull-put-spread').length} bull put spreads
                         </div>
                     </div>
                     <div className="stat-card">
-                        <div className="stat-label">Total Credit</div>
-                        <div className="stat-value green">${totalCredit.toLocaleString()}</div>
+                        <div className="stat-label">Unrealized P&L</div>
+                        <div className={`stat-value ${totalUnrealizedPnl >= 0 ? 'green' : 'red'}`}>
+                            {hasLivePnl ? `${totalUnrealizedPnl >= 0 ? '+' : ''}$${totalUnrealizedPnl.toFixed(0)}` : '—'}
+                        </div>
                         <div className="stat-change" style={{ color: 'var(--text-muted)' }}>
-                            received across {allOpen.length} positions
+                            {hasLivePnl
+                                ? `${totalMaxProfit > 0 ? Math.round(totalUnrealizedPnl / totalMaxProfit * 100) : 0}% of max profit`
+                                : 'no live data'}
                         </div>
                     </div>
                     <div className="stat-card">
@@ -336,7 +351,7 @@ export default function Portfolio() {
                         <div className="stat-label">Capital at Risk</div>
                         <div className="stat-value red">${totalMaxLoss.toLocaleString()}</div>
                         <div className="stat-change" style={{ color: 'var(--text-muted)' }}>
-                            max loss across all positions
+                            total credit ${totalCredit.toLocaleString()}
                         </div>
                     </div>
                 </div>
@@ -377,22 +392,29 @@ export default function Portfolio() {
                                         <th>Type</th>
                                         <th>Strikes</th>
                                         <th>Qty</th>
-                                        <th>Expiration</th>
+                                        <th>Underlying</th>
                                         <th>DTE</th>
                                         <th>Cr/Dr</th>
-                                        <th>Max Profit</th>
-                                        <th>Max Loss</th>
+                                        <th>P&L</th>
+                                        <th>% of Max</th>
+                                        <th>Breakeven</th>
+                                        <th>Distance</th>
                                         <th>Status</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {open.map((p) => (
+                                    {open.map((p) => {
+                                        const pnl = positionPnlTotal(p);
+                                        const pctMax = positionPnlPct(p);
+                                        return (
                                         <tr key={p.id}>
                                             <td className="symbol">{p.symbol}</td>
                                             <td><span className={`badge ${TYPE_COLORS[p.type] || 'badge-indigo'}`} style={{ fontSize: 10 }}>{TYPE_LABELS[p.type] || p.type}</span></td>
                                             <td style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13 }}>{formatStrikes(p)}</td>
                                             <td>{p.qty}</td>
-                                            <td style={{ fontSize: 12 }}>{p.expiration}</td>
+                                            <td style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13 }}>
+                                                {p.underlyingPrice != null ? `$${p.underlyingPrice.toFixed(2)}` : '—'}
+                                            </td>
                                             <td>
                                                 <span style={{ color: p.dte <= 14 ? 'var(--amber)' : 'var(--text-secondary)' }}>
                                                     {p.dte <= 7 && <Clock size={12} style={{ marginRight: 4, verticalAlign: 'middle' }} />}
@@ -408,17 +430,35 @@ export default function Portfolio() {
                                                     <span style={{ color: 'var(--text-accent)' }}>-${Math.abs(p.credit).toFixed(2)}</span>
                                                 ) : <span>—</span>}
                                             </td>
-                                            <td style={{ color: 'var(--green)' }}>
-                                                {p.maxProfit != null ? `$${p.maxProfit.toLocaleString()}` : p.credit != null ? `$${(p.credit * p.qty * 100).toFixed(0)}` : '—'}
+                                            <td style={{ fontWeight: 600, color: pnl != null ? (pnl >= 0 ? 'var(--green)' : 'var(--red)') : 'var(--text-muted)' }}>
+                                                {pnl != null ? `${pnl >= 0 ? '+' : ''}$${pnl.toFixed(0)}` : '—'}
                                             </td>
-                                            <td style={{ color: 'var(--red)' }}>
-                                                {p.maxLoss != null ? `$${p.maxLoss.toLocaleString()}` : '—'}
+                                            <td>
+                                                {pctMax != null ? (
+                                                    <span style={{ fontWeight: 600, color: pctMax >= 50 ? 'var(--green)' : pctMax < 0 ? 'var(--red)' : 'var(--text-secondary)' }}>
+                                                        {pctMax.toFixed(0)}%
+                                                    </span>
+                                                ) : '—'}
+                                            </td>
+                                            <td style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13 }}>
+                                                {p.breakeven != null ? `$${p.breakeven.toFixed(2)}` : '—'}
+                                            </td>
+                                            <td>
+                                                {p.distancePct != null ? (
+                                                    <span style={{
+                                                        fontWeight: 600,
+                                                        color: p.distancePct > 5 ? 'var(--green)' : p.distancePct > 2 ? 'var(--amber)' : 'var(--red)',
+                                                    }}>
+                                                        {p.distancePct > 0 ? '+' : ''}{p.distancePct.toFixed(1)}%
+                                                    </span>
+                                                ) : '—'}
                                             </td>
                                             <td><StatusBadge position={p} /></td>
                                         </tr>
-                                    ))}
+                                        );
+                                    })}
                                     {open.length === 0 && (
-                                        <tr><td colSpan={10} style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>No {typeFilter !== 'all' ? TYPE_LABELS[typeFilter] : ''} positions open</td></tr>
+                                        <tr><td colSpan={12} style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>No {typeFilter !== 'all' ? TYPE_LABELS[typeFilter] : ''} positions open</td></tr>
                                     )}
                                 </tbody>
                             </table>

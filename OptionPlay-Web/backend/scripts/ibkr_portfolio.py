@@ -25,7 +25,7 @@ def main():
         from ib_insync import IB
 
         ib = IB()
-        await ib.connectAsync(args.host, args.port, clientId=99, timeout=10)
+        await ib.connectAsync(args.host, args.port, clientId=99, timeout=10, readonly=True)
         raw = ib.portfolio()
 
         positions = []

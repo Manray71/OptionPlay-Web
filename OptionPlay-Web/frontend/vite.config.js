@@ -8,7 +8,9 @@ export default defineConfig({
         globals: true,
     },
     server: {
+        host: true,
         port: 5173,
+        allowedHosts: ['optionplay'],
         proxy: {
             '/api': {
                 target: 'http://localhost:8000',

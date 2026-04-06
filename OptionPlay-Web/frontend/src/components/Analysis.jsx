@@ -279,6 +279,8 @@ function mapApiAnalysis(data, sym) {
         fallingKnife: data.falling_knife ?? null,
         recommendation,
         _liveData: strategies.length > 0,
+        marketOpen: data.market_open ?? true,
+        priceSource: data.price_source ?? 'live',
     };
 }
 
@@ -668,7 +670,7 @@ export default function Analysis({ initialSymbol, onSymbolConsumed, analysisCach
                                 <div className="stat-change" style={{ color: 'var(--text-muted)' }}>{result.sector}</div>
                             </div>
                             <div className="stat-card">
-                                <div className="stat-label">Price</div>
+                                <div className="stat-label">Price{!result.marketOpen && ' (Close)'}</div>
                                 <div className="stat-value indigo">${Number(result.price).toFixed(2)}</div>
                                 <div className="stat-change" style={{ color: result.change >= 0 ? 'var(--green)' : 'var(--red)' }}>
                                     {result.change >= 0 ? '+' : ''}{result.change}%

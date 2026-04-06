@@ -1,7 +1,7 @@
 """Standalone script to fetch IBKR news for a symbol.
 
-Called via subprocess from json_routes.py — all user inputs passed as CLI args
-to avoid f-string code injection.
+Called via subprocess from json_routes.py — connects directly to
+IBKR Gateway with readonly=True to avoid write-access warnings.
 """
 
 import argparse
@@ -9,41 +9,67 @@ import asyncio
 import json
 import re
 import sys
+from datetime import datetime, timedelta
 
 
 def main():
     parser = argparse.ArgumentParser(description="Fetch IBKR news")
     parser.add_argument("--symbol", required=True, help="Stock ticker symbol")
+    parser.add_argument("--host", default="127.0.0.1", help="Gateway host")
+    parser.add_argument("--port", type=int, default=4001, help="Gateway port")
     parser.add_argument("--days", type=int, default=5, help="Days to look back")
     parser.add_argument("--count", type=int, default=5, help="Max headlines")
-    parser.add_argument(
-        "--optionplay-dir", required=True, help="Path to OptionPlay root"
-    )
     args = parser.parse_args()
 
-    sys.path.insert(0, args.optionplay_dir)
+    def clean(h):
+        return re.sub(r"\{[^}]*\}", "", h).strip()
 
     async def fetch():
-        from src.ibkr.bridge import get_ibkr_bridge
+        from ib_insync import IB, Stock
 
-        bridge = get_ibkr_bridge()
-        news = await bridge.get_news(
-            [args.symbol], days=args.days, max_per_symbol=args.count
+        ib = IB()
+        await ib.connectAsync(
+            args.host, args.port, clientId=97, timeout=10, readonly=True
         )
 
-        def clean(h):
-            return re.sub(r"\{[^}]*\}", "", h).strip()
+        symbol = args.symbol.upper()
+        stock = Stock(symbol, "SMART", "USD")
+        qualified = await ib.qualifyContractsAsync(stock)
 
-        result = [
-            {
-                "title": clean(n.headline),
-                "publisher": n.provider or "IBKR",
-                "link": None,
-                "timestamp": 0,
-                "date": n.time or "",
-            }
-            for n in news
-        ]
+        if not qualified or not stock.conId:
+            ib.disconnect()
+            print(json.dumps([]))
+            return
+
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=args.days)
+
+        try:
+            headlines = await asyncio.wait_for(
+                ib.reqHistoricalNewsAsync(
+                    stock.conId,
+                    providerCodes="DJ-N+DJ-RTA+DJ-RTE+BRFG+BRFUPDN",
+                    startDateTime=start_date,
+                    endDateTime=end_date,
+                    totalResults=args.count,
+                ),
+                timeout=15,
+            )
+        except asyncio.TimeoutError:
+            headlines = []
+
+        result = []
+        if headlines:
+            for h in headlines:
+                result.append({
+                    "title": clean(h.headline),
+                    "publisher": h.providerCode or "IBKR",
+                    "link": None,
+                    "timestamp": 0,
+                    "date": h.time.isoformat() if h.time else "",
+                })
+
+        ib.disconnect()
         print(json.dumps(result))
 
     asyncio.run(fetch())
