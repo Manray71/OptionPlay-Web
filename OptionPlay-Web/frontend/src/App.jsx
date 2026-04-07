@@ -4,6 +4,7 @@ import {
     Search,
     BarChart3,
     Briefcase,
+    Eye,
     Settings,
     Activity,
 } from 'lucide-react';
@@ -11,6 +12,7 @@ import Dashboard from './components/Dashboard';
 import Scanner from './components/Scanner';
 import Analysis from './components/Analysis';
 import Portfolio from './components/Portfolio';
+import ShadowTracker from './components/ShadowTracker';
 import Admin from './components/Admin';
 import { fetchAnalysisJson } from './api';
 
@@ -19,6 +21,7 @@ const NAV_ITEMS = [
     { id: 'scanner', label: 'Scanner', icon: Search },
     { id: 'analysis', label: 'Analysis', icon: BarChart3 },
     { id: 'portfolio', label: 'Portfolio', icon: Briefcase },
+    { id: 'shadow', label: 'Shadow Tracker', icon: Eye },
     { id: 'admin', label: 'Admin', icon: Settings },
 ];
 
@@ -114,6 +117,7 @@ function App() {
             case 'scanner': return <Scanner onSymbolClick={navigateToAnalysis} scanResults={scanResults} setScanResults={setScanResults} scanTime={scanTime} setScanTime={setScanTime} analysisCache={analysisCacheRef} prefetchAnalyses={prefetchAnalyses} prefetchProgress={prefetchProgress} setPrefetchProgress={setPrefetchProgress} />;
             case 'analysis': return <Analysis initialSymbol={analysisSymbol} onSymbolConsumed={() => setAnalysisSymbol('')} analysisCache={analysisCacheRef} />;
             case 'portfolio': return <Portfolio />;
+            case 'shadow': return <ShadowTracker />;
             case 'admin': return <Admin />;
             default: return <Dashboard onSymbolClick={navigateToAnalysis} />;
         }

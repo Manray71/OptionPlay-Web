@@ -29,7 +29,6 @@ function generateMockAnalysis(sym) {
 
         strategies: [
             { name: 'Pullback', score: parseFloat((rng(4, 9)).toFixed(1)), signal: rng(0, 1) > 0.5 ? 'Strong' : 'Moderate', components: { rsi: parseFloat((rng(0.5, 3.5)).toFixed(1)), support: parseFloat((rng(0.5, 2.5)).toFixed(1)), fibonacci: parseFloat((rng(0.3, 2.0)).toFixed(1)), volume: parseFloat((rng(0.2, 1.5)).toFixed(1)), ma: parseFloat((rng(0.2, 1.0)).toFixed(1)) } },
-            { name: 'Trend', score: parseFloat((rng(3, 8)).toFixed(1)), signal: rng(0, 1) > 0.6 ? 'Strong' : 'Moderate', components: { sma_alignment: parseFloat((rng(0.5, 2.5)).toFixed(1)), stability: parseFloat((rng(0.5, 2.0)).toFixed(1)), buffer: parseFloat((rng(0.3, 2.0)).toFixed(1)), momentum: parseFloat((rng(0.2, 1.5)).toFixed(1)), volatility: parseFloat((rng(0.1, 1.0)).toFixed(1)) } },
             { name: 'Bounce', score: parseFloat((rng(2, 7)).toFixed(1)), signal: rng(0, 1) > 0.7 ? 'Moderate' : 'Weak', components: { support: parseFloat((rng(0.3, 2.0)).toFixed(1)), rsi: parseFloat((rng(0.2, 1.5)).toFixed(1)), volume: parseFloat((rng(0.2, 1.2)).toFixed(1)), confirmation: parseFloat((rng(0.1, 1.0)).toFixed(1)), trend: parseFloat((rng(0.1, 0.8)).toFixed(1)) } },
         ],
 
@@ -109,19 +108,6 @@ function _componentDisplay(key, val) {
         case 'sector':       return val.name || null;
         case 'candlestick':  return val.pattern || null;
         case 'gap':          return val.size_pct != null ? `${Number(val.size_pct).toFixed(1)}%` : null;
-        // Trend continuation components
-        case 'sma_alignment': return val.spread_pct != null ? `${Number(val.spread_pct).toFixed(1)}% spread` : null;
-        case 'trend_stability': return val.closes_below_sma50 != null ? `${val.closes_below_sma50} closes < SMA50` : null;
-        case 'trend_buffer': return val.buffer_to_sma50_pct != null ? `${Number(val.buffer_to_sma50_pct).toFixed(1)}% to SMA50` : null;
-        case 'momentum_health': return val.rsi != null ? `RSI ${Number(val.rsi).toFixed(1)}` : null;
-        case 'volatility':   return val.atr_pct != null ? `ATR ${(Number(val.atr_pct) * 100).toFixed(1)}%` : null;
-        // ATH breakout
-        case 'ath_breakout': return val.pct_above != null ? `${Number(val.pct_above).toFixed(1)}% above` : null;
-        // Earnings dip
-        case 'dip':          return val.dip_pct != null ? `${Number(val.dip_pct).toFixed(1)}% dip` : null;
-        case 'stabilization': return val.days_without_new_low != null ? `${val.days_without_new_low}d stable` : null;
-        case 'fundamental':  return val.was_in_uptrend != null ? (val.was_in_uptrend ? 'uptrend' : 'no uptrend') : null;
-        case 'overreaction': return val.rsi_value != null ? `RSI ${Number(val.rsi_value).toFixed(1)}` : null;
         case 'trend':        return val.status || null;
         default:             return val.reason || null;
     }

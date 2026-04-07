@@ -145,6 +145,21 @@ export async function logShadowTrade(tradeData) {
     return res.json();
 }
 
+// Shadow Trade Review & Stats
+export async function fetchShadowReview(daysBack = 30, statusFilter = 'all', strategyFilter = '') {
+    const params = new URLSearchParams({ days_back: daysBack, status_filter: statusFilter });
+    if (strategyFilter) params.set('strategy_filter', strategyFilter);
+    const res = await fetch(`${API_BASE}/json/shadow-review?${params}`);
+    if (!res.ok) throw new Error('Failed to fetch shadow review');
+    return res.json();
+}
+
+export async function fetchShadowStats(groupBy = 'strategy', minTrades = 5) {
+    const res = await fetch(`${API_BASE}/json/shadow-stats?group_by=${groupBy}&min_trades=${minTrades}`);
+    if (!res.ok) throw new Error('Failed to fetch shadow stats');
+    return res.json();
+}
+
 // ── Admin API (auth required) ──
 
 export async function fetchConfigFiles() {

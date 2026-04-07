@@ -17,24 +17,21 @@ const STRATEGIES = [
     { id: 'multi', label: 'Multi-Strategy', desc: 'Best signal per symbol' },
     { id: 'pullback', label: 'Pullback', desc: 'RSI + Support dip' },
     { id: 'bounce', label: 'Support Bounce', desc: 'Bounce off support' },
-    { id: 'breakout', label: 'ATH Breakout', desc: 'New highs + volume' },
-    { id: 'dip', label: 'Earnings Dip', desc: 'Post-earnings recovery' },
-    { id: 'trend', label: 'Trend Continuation', desc: 'SMA alignment' },
 ];
 
 const MOCK_RESULTS = [
     { rank: 1, symbol: 'AAPL', strategy: 'Pullback', score: 7.8, normalized: 8.2, stability: 92, winRate: 94, sector: 'Technology', signal: 'Strong', earningsDate: '2026-05-02', earningsDays: 74 },
-    { rank: 2, symbol: 'MSFT', strategy: 'Trend', score: 7.2, normalized: 7.6, stability: 88, winRate: 91, sector: 'Technology', signal: 'Strong', earningsDate: '2026-04-24', earningsDays: 66 },
+    { rank: 2, symbol: 'MSFT', strategy: 'Pullback', score: 7.2, normalized: 7.6, stability: 88, winRate: 91, sector: 'Technology', signal: 'Strong', earningsDate: '2026-04-24', earningsDays: 66 },
     { rank: 3, symbol: 'UNH', strategy: 'Bounce', score: 6.9, normalized: 7.4, stability: 90, winRate: 89, sector: 'Healthcare', signal: 'Moderate', earningsDate: '2026-04-14', earningsDays: 56 },
     { rank: 4, symbol: 'JNJ', strategy: 'Pullback', score: 6.7, normalized: 7.1, stability: 95, winRate: 93, sector: 'Healthcare', signal: 'Moderate', earningsDate: '2026-04-15', earningsDays: 57 },
-    { rank: 5, symbol: 'V', strategy: 'Trend', score: 6.5, normalized: 6.9, stability: 87, winRate: 88, sector: 'Financial', signal: 'Moderate', earningsDate: '2026-04-28', earningsDays: 70 },
+    { rank: 5, symbol: 'V', strategy: 'Bounce', score: 6.5, normalized: 6.9, stability: 87, winRate: 88, sector: 'Financial', signal: 'Moderate', earningsDate: '2026-04-28', earningsDays: 70 },
     { rank: 6, symbol: 'PG', strategy: 'Bounce', score: 6.3, normalized: 6.7, stability: 93, winRate: 90, sector: 'Consumer Def.', signal: 'Moderate', earningsDate: '2026-04-18', earningsDays: 60 },
     { rank: 7, symbol: 'HD', strategy: 'Pullback', score: 6.1, normalized: 6.5, stability: 84, winRate: 86, sector: 'Consumer Cyc.', signal: 'Moderate', earningsDate: '2026-05-19', earningsDays: 91 },
-    { rank: 8, symbol: 'AVGO', strategy: 'Breakout', score: 5.9, normalized: 6.2, stability: 78, winRate: 82, sector: 'Technology', signal: 'Weak', earningsDate: '2026-03-05', earningsDays: 16 },
+    { rank: 8, symbol: 'AVGO', strategy: 'Pullback', score: 5.9, normalized: 6.2, stability: 78, winRate: 82, sector: 'Technology', signal: 'Moderate', earningsDate: '2026-03-05', earningsDays: 16 },
 ];
 
 function StrategyBadge({ strategy }) {
-    const map = { Pullback: 'pullback', Bounce: 'bounce', Breakout: 'breakout', 'Earnings Dip': 'dip', Trend: 'trend' };
+    const map = { Pullback: 'pullback', Bounce: 'bounce' };
     const cls = `strategy-chip strategy-${map[strategy] || 'pullback'}`;
     return <span className={cls}>{strategy}</span>;
 }

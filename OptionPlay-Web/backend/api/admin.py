@@ -21,12 +21,10 @@ CONFIG_DIR = os.path.abspath(
 router = APIRouter(dependencies=[Depends(require_admin_key)])
 
 CONFIG_FILES = {
-    "weights": "scoring_weights.yaml",
-    "thresholds": "analyzer_thresholds.yaml",
-    "scanner": "scanner_config.yaml",
-    "strategies": "strategies.yaml",
-    "rules": "trading_rules.yaml",
-    "settings": "settings.yaml",
+    "trading": "trading.yaml",
+    "scoring": "scoring.yaml",
+    "system": "system.yaml",
+    "watchlists": "watchlists.yaml",
 }
 
 # =============================================================================

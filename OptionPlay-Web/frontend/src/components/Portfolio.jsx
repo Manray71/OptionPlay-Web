@@ -1,6 +1,7 @@
 import { Briefcase, DollarSign, Clock, ChevronDown, Info } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { fetchPortfolioPositions } from '../api';
+import PositionDetail from './PositionDetail';
 
 // ──────────────────────────────────────────────────────────
 // Position types:
@@ -14,29 +15,29 @@ const MOCK_POSITIONS = [
     // ── Bull Put Spreads ──
     { id: 'P001', symbol: 'NVDA', type: 'bull-put-spread', strategy: 'Pullback', shortStrike: 115, longStrike: 110, expiration: '2026-04-17', dte: 59, qty: 2, credit: 1.45, currentValue: 0.84, status: 'open' },
     { id: 'P002', symbol: 'AMD', type: 'bull-put-spread', strategy: 'Bounce', shortStrike: 100, longStrike: 95, expiration: '2026-03-21', dte: 32, qty: 3, credit: 1.20, currentValue: 0.87, status: 'open' },
-    { id: 'P003', symbol: 'CRM', type: 'bull-put-spread', strategy: 'Trend', shortStrike: 280, longStrike: 275, expiration: '2026-04-17', dte: 59, qty: 1, credit: 1.10, currentValue: 1.42, status: 'open' },
+    { id: 'P003', symbol: 'CRM', type: 'bull-put-spread', strategy: 'Pullback', shortStrike: 280, longStrike: 275, expiration: '2026-04-17', dte: 59, qty: 1, credit: 1.10, currentValue: 1.42, status: 'open' },
 
     // ── Naked Short Puts ──
     { id: 'P004', symbol: 'AAPL', type: 'short-put', strategy: 'Pullback', shortStrike: 215, longStrike: null, expiration: '2026-03-21', dte: 32, qty: 1, credit: 2.85, currentValue: 1.30, status: 'open' },
-    { id: 'P005', symbol: 'GOOGL', type: 'short-put', strategy: 'Trend', shortStrike: 170, longStrike: null, expiration: '2026-04-17', dte: 59, qty: 2, credit: 3.40, currentValue: 2.10, status: 'open' },
+    { id: 'P005', symbol: 'GOOGL', type: 'short-put', strategy: 'Bounce', shortStrike: 170, longStrike: null, expiration: '2026-04-17', dte: 59, qty: 2, credit: 3.40, currentValue: 2.10, status: 'open' },
 
     // ── Long Calls ──
-    { id: 'P006', symbol: 'TSLA', type: 'long-call', strategy: 'Breakout', longStrike: 340, shortStrike: null, expiration: '2026-06-19', dte: 122, qty: 5, debit: 18.50, currentValue: 24.30, status: 'open' },
+    { id: 'P006', symbol: 'TSLA', type: 'long-call', strategy: 'Bounce', longStrike: 340, shortStrike: null, expiration: '2026-06-19', dte: 122, qty: 5, debit: 18.50, currentValue: 24.30, status: 'open' },
     { id: 'P007', symbol: 'AMZN', type: 'long-call', strategy: 'Pullback', longStrike: 220, shortStrike: null, expiration: '2026-05-15', dte: 87, qty: 3, debit: 12.80, currentValue: 10.45, status: 'open' },
 
     // ── Bull Call Spreads ──
-    { id: 'P008', symbol: 'META', type: 'bull-call-spread', strategy: 'Trend', longStrike: 620, shortStrike: 650, expiration: '2026-04-17', dte: 59, qty: 2, debit: 8.20, currentValue: 12.50, status: 'open' },
+    { id: 'P008', symbol: 'META', type: 'bull-call-spread', strategy: 'Pullback', longStrike: 620, shortStrike: 650, expiration: '2026-04-17', dte: 59, qty: 2, debit: 8.20, currentValue: 12.50, status: 'open' },
     { id: 'P009', symbol: 'SPY', type: 'bull-call-spread', strategy: 'Pullback', longStrike: 595, shortStrike: 610, expiration: '2026-03-21', dte: 32, qty: 4, debit: 5.60, currentValue: 7.85, status: 'open' },
 
     // ── Closed Trades ──
     { id: 'C001', symbol: 'AAPL', type: 'bull-put-spread', strategy: 'Pullback', shortStrike: 180, longStrike: 175, expiration: '2026-02-21', dte: 0, qty: 2, credit: 1.30, currentValue: 0.00, closedAt: 0.00, status: 'expired' },
-    { id: 'C002', symbol: 'MSFT', type: 'bull-put-spread', strategy: 'Trend', shortStrike: 400, longStrike: 395, expiration: '2026-02-07', dte: 0, qty: 1, credit: 1.15, currentValue: 0.00, closedAt: 0.55, status: 'closed' },
+    { id: 'C002', symbol: 'MSFT', type: 'bull-put-spread', strategy: 'Bounce', shortStrike: 400, longStrike: 395, expiration: '2026-02-07', dte: 0, qty: 1, credit: 1.15, currentValue: 0.00, closedAt: 0.55, status: 'closed' },
     { id: 'C003', symbol: 'NVDA', type: 'short-put', strategy: 'Pullback', shortStrike: 120, longStrike: null, expiration: '2026-01-17', dte: 0, qty: 1, credit: 3.90, currentValue: 0.00, closedAt: 0.80, status: 'closed' },
-    { id: 'C004', symbol: 'TSLA', type: 'long-call', strategy: 'Breakout', longStrike: 280, shortStrike: null, expiration: '2026-01-17', dte: 0, qty: 3, debit: 14.20, currentValue: 0.00, closedAt: 22.60, status: 'closed' },
-    { id: 'C005', symbol: 'META', type: 'bull-call-spread', strategy: 'Trend', longStrike: 580, shortStrike: 610, expiration: '2026-02-07', dte: 0, qty: 2, debit: 7.50, currentValue: 0.00, closedAt: 19.40, status: 'closed' },
+    { id: 'C004', symbol: 'TSLA', type: 'long-call', strategy: 'Bounce', longStrike: 280, shortStrike: null, expiration: '2026-01-17', dte: 0, qty: 3, debit: 14.20, currentValue: 0.00, closedAt: 22.60, status: 'closed' },
+    { id: 'C005', symbol: 'META', type: 'bull-call-spread', strategy: 'Pullback', longStrike: 580, shortStrike: 610, expiration: '2026-02-07', dte: 0, qty: 2, debit: 7.50, currentValue: 0.00, closedAt: 19.40, status: 'closed' },
 ];
 
-const STRATEGIES_MAP = { Pullback: 'pullback', Bounce: 'bounce', Breakout: 'breakout', Trend: 'trend', 'Earnings Dip': 'dip' };
+const STRATEGIES_MAP = { Pullback: 'pullback', Bounce: 'bounce' };
 
 // ── Map API portfolio position to component format ──
 
@@ -270,6 +271,7 @@ export default function Portfolio() {
     const [typeFilter, setTypeFilter] = useState('all');
     const [allPositions, setAllPositions] = useState(MOCK_POSITIONS);
     const [demoMode, setDemoMode] = useState(false);
+    const [selectedPosition, setSelectedPosition] = useState(null);
 
     useEffect(() => {
         let cancelled = false;
@@ -306,6 +308,11 @@ export default function Portfolio() {
     const activeTypes = [...new Set(allPositions.map(p => p.type))];
     const positionTypes = ['all', ...activeTypes];
     const typeLabels = { all: 'All', ...TYPE_LABELS };
+
+    // Detail view — show PositionDetail when a position is selected
+    if (selectedPosition) {
+        return <PositionDetail position={selectedPosition} onBack={() => setSelectedPosition(null)} />;
+    }
 
     return (
         <>
@@ -407,7 +414,7 @@ export default function Portfolio() {
                                         const pnl = positionPnlTotal(p);
                                         const pctMax = positionPnlPct(p);
                                         return (
-                                        <tr key={p.id}>
+                                        <tr key={p.id} onClick={() => setSelectedPosition(p)} style={{ cursor: 'pointer' }}>
                                             <td className="symbol">{p.symbol}</td>
                                             <td><span className={`badge ${TYPE_COLORS[p.type] || 'badge-indigo'}`} style={{ fontSize: 10 }}>{TYPE_LABELS[p.type] || p.type}</span></td>
                                             <td style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13 }}>{formatStrikes(p)}</td>
@@ -497,7 +504,7 @@ export default function Portfolio() {
                                         const pnl = positionPnlTotal(p);
                                         const pnlPct = positionPnlPct(p);
                                         return (
-                                            <tr key={p.id}>
+                                            <tr key={p.id} onClick={() => setSelectedPosition(p)} style={{ cursor: 'pointer' }}>
                                                 <td className="symbol">{p.symbol}</td>
                                                 <td><span className={`badge ${TYPE_COLORS[p.type]}`} style={{ fontSize: 10 }}>{TYPE_LABELS[p.type]}</span></td>
                                                 <td><span className={`strategy-chip strategy-${STRATEGIES_MAP[p.strategy]}`}>{p.strategy}</span></td>

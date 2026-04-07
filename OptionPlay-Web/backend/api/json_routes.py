@@ -575,9 +575,6 @@ async def run_scan(req: ScanRequest):
             "multi": ScanMode.BEST_SIGNAL,
             "pullback": ScanMode.PULLBACK_ONLY,
             "bounce": ScanMode.BOUNCE_ONLY,
-            "breakout": ScanMode.BREAKOUT_ONLY,
-            "dip": ScanMode.EARNINGS_DIP,
-            "trend": ScanMode.TREND_ONLY,
         }
         mode = mode_map.get(req.strategy, ScanMode.BEST_SIGNAL)
 
@@ -1680,11 +1677,6 @@ async def log_shadow_trade(req: ShadowLogRequest):
         "pullback": "pullback",
         "bounce": "bounce",
         "support bounce": "bounce",
-        "ath breakout": "ath_breakout",
-        "breakout": "ath_breakout",
-        "earnings dip": "earnings_dip",
-        "trend continuation": "trend_continuation",
-        "trend": "trend_continuation",
     }
     strategy = strategy_map.get(
         req.strategy.lower(), req.strategy.lower().replace(" ", "_")
@@ -1797,6 +1789,60 @@ async def log_shadow_trade(req: ShadowLogRequest):
             }
     except ValueError as e:
         return JSONResponse({"error": str(e)}, status_code=400)
+    except Exception as e:
+        return _error(str(e), status=500)
+    finally:
+        tracker.close()
+
+
+@router.get("/shadow-review")
+async def shadow_review(
+    days_back: int = 30,
+    status_filter: str = "all",
+    strategy_filter: str = "",
+):
+    """Shadow trade review — list trades with filtering."""
+    import sys
+    optionplay_dir = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "../../../OptionPlay")
+    )
+    if optionplay_dir not in sys.path:
+        sys.path.insert(0, optionplay_dir)
+
+    from src.shadow_tracker import ShadowTracker
+
+    tracker = ShadowTracker()
+    try:
+        trades = tracker.get_trades(
+            days_back=days_back,
+            status_filter=status_filter if status_filter else "all",
+            strategy_filter=strategy_filter if strategy_filter else None,
+        )
+        return {"trades": trades, "count": len(trades)}
+    except Exception as e:
+        return _error(str(e), status=500)
+    finally:
+        tracker.close()
+
+
+@router.get("/shadow-stats")
+async def shadow_stats(group_by: str = "strategy", min_trades: int = 5):
+    """Aggregated shadow trade statistics."""
+    import sys
+    optionplay_dir = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "../../../OptionPlay")
+    )
+    if optionplay_dir not in sys.path:
+        sys.path.insert(0, optionplay_dir)
+
+    from src.shadow_tracker import ShadowTracker, get_stats
+
+    tracker = ShadowTracker()
+    try:
+        stats = get_stats(tracker, group_by=group_by, min_trades=min_trades)
+        return {"stats": stats}
+    except ValueError as e:
+        return _error(str(e), status=400)
     except Exception as e:
         return _error(str(e), status=500)
     finally:

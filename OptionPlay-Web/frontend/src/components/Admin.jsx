@@ -3,12 +3,10 @@ import { Settings, Save, RotateCcw, FileText, CheckCircle, AlertCircle, Database
 import { fetchConfig, saveConfig, runDbUpdate, fetchDbCoverage, runFundamentalsUpdate } from '../api';
 
 const CONFIG_TABS = [
-    { key: 'weights', label: 'Scoring Weights', desc: 'Strategy weights, sector factors, regime overrides' },
-    { key: 'thresholds', label: 'Thresholds', desc: 'Technical indicator thresholds per strategy' },
-    { key: 'scanner', label: 'Scanner', desc: 'Scan filters, stability tiers, output limits' },
-    { key: 'strategies', label: 'Strategies', desc: 'VIX profiles, exit/roll logic, trained weights' },
-    { key: 'rules', label: 'Trading Rules', desc: 'Entry, spread, VIX regime, risk management' },
-    { key: 'settings', label: 'Settings', desc: 'Data sources, API, performance, infrastructure' },
+    { key: 'trading', label: 'Trading', desc: 'Entry rules, VIX regime, exit/roll, trained weights' },
+    { key: 'scoring', label: 'Scoring', desc: 'Strategy weights, thresholds, sector factors' },
+    { key: 'system', label: 'System', desc: 'Scanner config, data sources, infrastructure' },
+    { key: 'watchlists', label: 'Watchlists', desc: 'Symbol lists, extended watchlist' },
 ];
 
 const DB_STEPS = [
