@@ -1,6 +1,7 @@
 import { Briefcase, DollarSign, Clock, ChevronDown, Info } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { fetchPortfolioPositions } from '../api';
+import { useMarketData } from '../contexts/MarketDataContext';
 import PositionDetail from './PositionDetail';
 
 // ──────────────────────────────────────────────────────────
@@ -289,6 +290,16 @@ export default function Portfolio() {
         loadData();
         return () => { cancelled = true; };
     }, []);
+
+    // ── SSE live overlay — update positions when streaming data arrives ──
+    const liveData = useMarketData();
+
+    useEffect(() => {
+        if (liveData.positions?.positions?.length) {
+            setAllPositions(liveData.positions.positions.map(apiPositionToPortfolio));
+            setDemoMode(false);
+        }
+    }, [liveData.positions]);
 
     const toggleSection = (id) => setCollapsed(prev => ({ ...prev, [id]: !prev[id] }));
 

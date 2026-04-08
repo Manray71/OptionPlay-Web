@@ -1,4 +1,6 @@
+import asyncio
 import os
+from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -9,10 +11,24 @@ from slowapi.errors import RateLimitExceeded
 # Load .env before anything else
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
-from .api import routes, admin, json_routes  # noqa: E402
+from .api import routes, admin, json_routes, sse_routes  # noqa: E402
 from .rate_limit import limiter  # noqa: E402
+from .services.polling_loop import start_polling  # noqa: E402
 
-app = FastAPI(title="OptionPlay Web API", version="1.0.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Start background polling on startup, cancel on shutdown."""
+    task = asyncio.create_task(start_polling())
+    yield
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+
+app = FastAPI(title="OptionPlay Web API", version="1.0.0", lifespan=lifespan)
 
 # Rate limiter
 app.state.limiter = limiter
@@ -39,6 +55,7 @@ app.add_middleware(
 app.include_router(routes.router, prefix="/api", tags=["General"])
 app.include_router(admin.router, prefix="/api/admin", tags=["Admin"])
 app.include_router(json_routes.router, prefix="/api/json", tags=["JSON API"])
+app.include_router(sse_routes.router, prefix="/api/json", tags=["SSE"])
 
 
 @app.get("/health")

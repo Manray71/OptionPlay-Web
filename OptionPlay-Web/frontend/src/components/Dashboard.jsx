@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useMarketData } from '../contexts/MarketDataContext';
 import {
     Activity,
     TrendingUp,
@@ -225,6 +226,27 @@ export default function Dashboard({ onSymbolClick }) {
         setDemoMode(data.demoMode || false);
         setCacheTime(data.ts || Date.now());
     }, []);
+
+    // ── SSE live overlay — overwrites state when streaming data arrives ──
+    const liveData = useMarketData();
+
+    useEffect(() => {
+        if (liveData.vix) {
+            setVix(liveData.vix.vix);
+            setVixChange(liveData.vix.change ?? null);
+            setVixChangePct(liveData.vix.change_pct ?? null);
+            setRegime(liveData.vix.regime);
+            setMarketOpen(liveData.vix.market_open ?? true);
+            setVixDataSource(liveData.vix.data_source || 'live');
+        }
+    }, [liveData.vix]);
+
+    useEffect(() => {
+        if (liveData.quotes?.quotes?.length) {
+            setMarket(liveData.quotes.quotes);
+            if (liveData.quotes.market_session) setMarketSession(liveData.quotes.market_session);
+        }
+    }, [liveData.quotes]);
 
     const fetchFresh = useCallback(async () => {
         const results = await Promise.allSettled([

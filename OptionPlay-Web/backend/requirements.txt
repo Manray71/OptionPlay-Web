@@ -7,4 +7,5 @@ pytest
 httpx
 ruff
 nest_asyncio
+sse-starlette
 

@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef } from 'react';
+import { useMarketData } from './contexts/MarketDataContext';
 import {
     LayoutDashboard,
     Search,
@@ -111,6 +112,9 @@ function App() {
         setActivePage('analysis');
     }, []);
 
+    // Live connection status from SSE
+    const { connected: sseConnected, pollingActive } = useMarketData();
+
     const renderPage = () => {
         switch (activePage) {
             case 'dashboard': return <Dashboard onSymbolClick={navigateToAnalysis} />;
@@ -150,8 +154,10 @@ function App() {
 
                 <div className="sidebar-footer">
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                        <Activity size={14} style={{ color: 'var(--green)' }} />
-                        <span style={{ fontSize: 12, color: 'var(--green)' }}>Connected</span>
+                        <Activity size={14} style={{ color: sseConnected ? 'var(--green)' : 'var(--text-dim, #666)' }} />
+                        <span style={{ fontSize: 12, color: sseConnected ? 'var(--green)' : 'var(--text-dim, #666)' }}>
+                            {sseConnected ? (pollingActive ? 'Live' : 'Connected') : 'Reconnecting...'}
+                        </span>
                     </div>
                     <div className="version">OptionPlay Web v1.0.0</div>
                 </div>
