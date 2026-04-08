@@ -19,7 +19,7 @@ IBKR_HOST = "127.0.0.1"
 IBKR_PORT = int(os.environ.get("IBKR_PORT", 7497))
 
 OPTIONPLAY_DIR = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "../../../../OptionPlay")
+    os.path.join(os.path.dirname(__file__), "../../../OptionPlay")
 )
 
 SCRIPTS_DIR = os.path.join(os.path.dirname(__file__), "..", "scripts")
