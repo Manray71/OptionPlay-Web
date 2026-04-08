@@ -110,7 +110,8 @@ export default function Scanner({ onSymbolClick, scanResults, setScanResults, sc
         let rows = [...results];
 
         // Hide results with credit below $2 once analysis is loaded
-        rows = rows.filter(r => r.tradeQuality == null || (r.credit != null && r.credit >= 2.0));
+        // Skip this filter when market is closed (black_scholes/mid_price data is unreliable)
+        rows = rows.filter(r => r.tradeQuality == null || r.marketClosed || (r.credit != null && r.credit >= 2.0));
 
         // Apply filters
         if (filters.symbol) {
