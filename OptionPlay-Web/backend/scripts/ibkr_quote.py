@@ -14,7 +14,7 @@ import sys
 def main():
     parser = argparse.ArgumentParser(description="Fetch IBKR quotes")
     parser.add_argument("--host", default="127.0.0.1", help="Gateway host")
-    parser.add_argument("--port", type=int, default=4001, help="Gateway port")
+    parser.add_argument("--port", type=int, default=7497, help="TWS port")
     parser.add_argument("--symbols", required=True, help="Comma-separated symbols")
     args = parser.parse_args()
 

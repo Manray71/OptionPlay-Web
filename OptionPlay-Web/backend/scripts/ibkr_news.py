@@ -16,7 +16,7 @@ def main():
     parser = argparse.ArgumentParser(description="Fetch IBKR news")
     parser.add_argument("--symbol", required=True, help="Stock ticker symbol")
     parser.add_argument("--host", default="127.0.0.1", help="Gateway host")
-    parser.add_argument("--port", type=int, default=4001, help="Gateway port")
+    parser.add_argument("--port", type=int, default=7497, help="TWS port")
     parser.add_argument("--days", type=int, default=5, help="Days to look back")
     parser.add_argument("--count", type=int, default=5, help="Max headlines")
     args = parser.parse_args()

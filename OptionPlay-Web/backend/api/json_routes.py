@@ -151,9 +151,9 @@ def _db_last_vix():
     return None, None
 
 
-# IBKR Gateway port (default 4001; override via IBKR_PORT env var)
+# IBKR TWS port (default 7497 Paper; override via IBKR_PORT env var)
 IBKR_HOST = "127.0.0.1"
-IBKR_PORT = int(os.environ.get("IBKR_PORT", 4001))
+IBKR_PORT = int(os.environ.get("IBKR_PORT", 7497))
 
 
 def _ibkr_news_sync(symbol: str, days: int = 5, count: int = 5):
