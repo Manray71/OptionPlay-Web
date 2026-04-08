@@ -1058,11 +1058,22 @@ async def get_portfolio_positions(status: str = "all"):
         })
         underlying_prices = {}
         if open_symbols:
-            ibkr_quotes = await _fetch_ibkr_quotes(open_symbols)
-            if ibkr_quotes:
-                underlying_prices = {
-                    sym: q["price"] for sym, q in ibkr_quotes.items() if q.get("price")
-                }
+            # Fetch quotes via yfinance (avoids IBKR clientId conflicts with polling loop)
+            loop = asyncio.get_event_loop()
+            for sym in open_symbols:
+                try:
+                    yf_price, _, _ = await loop.run_in_executor(None, _yfinance_quote, sym)
+                    if yf_price:
+                        underlying_prices[sym] = yf_price
+                except Exception:
+                    pass
+
+            # Fallback: local DB last close for any missing
+            for sym in open_symbols:
+                if sym not in underlying_prices:
+                    close, _ = _db_last_close(sym)
+                    if close:
+                        underlying_prices[sym] = close
 
         for p in positions:
             sym = p.get("symbol")
@@ -1070,18 +1081,34 @@ async def get_portfolio_positions(status: str = "all"):
             if price and p.get("status") == "open":
                 p["underlying_price"] = round(price, 2)
 
-                # Breakeven for credit spreads (Bull Put: short_strike - credit)
+                # Breakeven + Distance
                 short_s = p.get("short_strike")
+                long_s = p.get("long_strike")
                 nc = p.get("net_credit")
+                debit = p.get("debit")
+                strategy = (p.get("strategy") or "").lower()
+
                 if short_s and nc and nc > 0:
+                    # Credit spread: breakeven = short_strike - credit
                     p["breakeven"] = round(short_s - nc, 2)
                     p["distance_pct"] = round((price - short_s) / price * 100, 1)
+                elif "long call" in strategy and long_s:
+                    # Long call: breakeven = strike + avg_cost/100
+                    avg = p.get("avg_cost_per_share") or (debit if debit else None)
+                    if avg:
+                        p["breakeven"] = round(long_s + avg, 2)
+                        p["distance_pct"] = round((price - long_s) / price * 100, 1)
 
                 # % of max profit captured (from unrealized P&L)
                 upnl = p.get("unrealized_pnl", 0) or 0
                 mp = p.get("max_profit", 0) or 0
                 if mp > 0:
                     p["pnl_pct_of_max"] = round(upnl / mp * 100, 1)
+                elif upnl != 0 and debit:
+                    # Long positions: % of cost basis
+                    cost = abs(debit) * (p.get("contracts", 1)) * 100
+                    if cost > 0:
+                        p["pnl_pct_of_max"] = round(upnl / cost * 100, 1)
 
         return {"positions": positions, "source": "ibkr"}
 
