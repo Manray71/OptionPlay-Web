@@ -188,11 +188,11 @@ export async function saveConfig(fileKey, content) {
 }
 
 // DB Update API
-export async function runDbUpdate(steps = ['vix', 'options', 'ohlcv'], dryRun = false) {
+export async function runDbUpdate(steps = ['vix', 'earnings'], dryRun = false, ohlcvDays = 10) {
     const res = await fetch(`${API_BASE}/admin/db-update`, {
         method: 'POST',
         headers: adminHeaders(),
-        body: JSON.stringify({ steps, dry_run: dryRun }),
+        body: JSON.stringify({ steps, dry_run: dryRun, ohlcv_days: ohlcvDays }),
     });
     if (!res.ok) throw new Error('DB update request failed');
     return res.json();
@@ -210,11 +210,11 @@ export async function fetchDbCoverage() {
     return res.json();
 }
 
-export async function runFundamentalsUpdate(mode = 'full') {
+export async function runFundamentalsUpdate(mode = 'full', delay = 1.0) {
     const res = await fetch(`${API_BASE}/admin/fundamentals-update`, {
         method: 'POST',
         headers: adminHeaders(),
-        body: JSON.stringify({ mode }),
+        body: JSON.stringify({ mode, delay }),
     });
     if (!res.ok) throw new Error('Fundamentals update request failed');
     return res.json();

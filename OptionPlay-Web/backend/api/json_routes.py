@@ -1346,100 +1346,71 @@ async def get_stock_rs(sector: str = None, exclude_earnings_days: int = 0):
 
 @router.get("/earnings-calendar")
 async def get_earnings_calendar(count: int = 5):
-    """Next upcoming earnings from watchlist."""
+    """Next upcoming earnings from watchlist — reads from local DB (earnings_history)."""
     try:
-        from datetime import date, datetime
+        from datetime import date
+        import sqlite3
+        from pathlib import Path
 
-        server = await get_server()
-        if not server:
-            return _error("OptionPlay server not available")
-
-        # Get watchlist symbols
-        watchlist = []
-        try:
-            from src.config.loader import ConfigLoader
-            cfg = ConfigLoader()
-            cfg.load_all()
-            watchlist = cfg.get_watchlist()
-        except Exception:
-            pass
-        if not watchlist:
-            # Fallback: small default list
-            watchlist = ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "AMD", "CRM", "NFLX"]
-
-        if not watchlist:
-            return {"earnings": []}
+        db_path = Path.home() / ".optionplay" / "trades.db"
+        if not db_path.exists():
+            return _error("trades.db not found")
 
         today = date.today()
+
+        # Get watchlist symbols
+        watchlist = set()
+        try:
+            from src.config.watchlist_loader import WatchlistLoader
+            loader = WatchlistLoader()
+            watchlist = set(loader.get_all_symbols())
+        except Exception:
+            pass
+
+        conn = sqlite3.connect(db_path)
+        try:
+            if watchlist:
+                placeholders = ",".join("?" * len(watchlist))
+                rows = conn.execute(
+                    f"""
+                    SELECT symbol, MIN(earnings_date) as next_date
+                    FROM earnings_history
+                    WHERE earnings_date >= ?
+                      AND symbol IN ({placeholders})
+                    GROUP BY symbol
+                    ORDER BY next_date ASC
+                    LIMIT ?
+                    """,
+                    [today.isoformat()] + list(watchlist) + [count],
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT symbol, MIN(earnings_date) as next_date
+                    FROM earnings_history
+                    WHERE earnings_date >= ?
+                    GROUP BY symbol
+                    ORDER BY next_date ASC
+                    LIMIT ?
+                    """,
+                    [today.isoformat(), count],
+                ).fetchall()
+        finally:
+            conn.close()
+
         earnings_list = []
+        for symbol, e_date_str in rows:
+            e_date = date.fromisoformat(e_date_str)
+            days_away = (e_date - today).days
+            status = "safe" if days_away > 45 else "caution" if days_away > 14 else "danger"
+            earnings_list.append({
+                "symbol": symbol,
+                "date": e_date_str,
+                "days_away": days_away,
+                "status": status,
+            })
 
-        # Use yfinance for earnings dates (fast, cached)
-        loop = asyncio.get_event_loop()
-
-        def _fetch_earnings_yf(sym):
-            try:
-                import yfinance as yf
-                t = yf.Ticker(sym)
-                cal = t.calendar
-                if cal is not None and not (hasattr(cal, 'empty') and cal.empty):
-                    # yfinance returns calendar as dict or DataFrame
-                    if isinstance(cal, dict):
-                        ed = cal.get("Earnings Date")
-                        if ed:
-                            # Can be a list of dates
-                            if isinstance(ed, list) and len(ed) > 0:
-                                return ed[0]
-                            return ed
-                    else:
-                        # DataFrame
-                        if "Earnings Date" in cal.index:
-                            dates = cal.loc["Earnings Date"]
-                            if hasattr(dates, 'iloc'):
-                                return dates.iloc[0]
-                            return dates
-            except Exception:
-                pass
-            return None
-
-        syms_to_check = watchlist
-
-        # Fetch earnings in parallel with concurrency limit
-        import asyncio as _aio
-        sem = _aio.Semaphore(10)
-
-        async def _check_sym(sym):
-            async with sem:
-                try:
-                    raw = await loop.run_in_executor(None, _fetch_earnings_yf, sym)
-                    if raw is None:
-                        return None
-                    if isinstance(raw, date):
-                        e_date = raw
-                    elif hasattr(raw, 'date'):
-                        e_date = raw.date() if callable(raw.date) else raw.date
-                    elif isinstance(raw, str):
-                        e_date = datetime.strptime(raw[:10], "%Y-%m-%d").date()
-                    else:
-                        return None
-                    days_away = (e_date - today).days
-                    if days_away >= 0:
-                        status = "safe" if days_away > 45 else "caution" if days_away > 14 else "danger"
-                        return {
-                            "symbol": sym,
-                            "date": e_date.isoformat(),
-                            "days_away": days_away,
-                            "status": status,
-                        }
-                except Exception:
-                    pass
-                return None
-
-        results = await _aio.gather(*[_check_sym(s) for s in syms_to_check])
-        earnings_list = [r for r in results if r is not None]
-
-        # Sort by date, take nearest
-        earnings_list.sort(key=lambda x: x["days_away"])
-        return {"earnings": earnings_list[:count]}
+        return {"earnings": earnings_list}
     except Exception as e:
         return _error(str(e))
 

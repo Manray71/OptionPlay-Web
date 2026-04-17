@@ -10,9 +10,10 @@ const CONFIG_TABS = [
 ];
 
 const DB_STEPS = [
-    { id: 'vix', label: 'VIX Data', desc: 'Historical VIX levels' },
-    { id: 'options', label: 'Options Chains', desc: 'Greeks & IV via IBKR' },
-    { id: 'ohlcv', label: 'OHLCV Prices', desc: 'Daily candlestick data' },
+    { id: 'vix', label: 'VIX Data', desc: 'Historical VIX levels (always included)' },
+    { id: 'earnings', label: 'Earnings Dates', desc: 'Future earnings via yfinance' },
+    { id: 'ohlcv', label: 'OHLCV Prices', desc: 'Daily candlestick data via IBKR TWS' },
+    { id: 'options', label: 'Options Snapshot', desc: 'Prices & Greeks via IBKR TWS (slow)' },
 ];
 
 const FUND_MODES = [
@@ -140,8 +141,9 @@ export default function Admin() {
     const [collapsed, setCollapsed] = useState({});
 
     // DB Update state
-    const [dbSteps, setDbSteps] = useState(['vix', 'options', 'ohlcv']);
+    const [dbSteps, setDbSteps] = useState(['vix', 'earnings']);
     const [dbDryRun, setDbDryRun] = useState(false);
+    const [dbOhlcvDays, setDbOhlcvDays] = useState(10);
     const [dbRunning, setDbRunning] = useState(false);
     const [dbResult, setDbResult] = useState(null);
 
@@ -222,7 +224,7 @@ export default function Admin() {
         setDbRunning(true);
         setDbResult(null);
         try {
-            const result = await runDbUpdate(dbSteps, dbDryRun);
+            const result = await runDbUpdate(dbSteps, dbDryRun, dbOhlcvDays);
             setDbResult(result);
             if (result.status === 'completed') await loadCoverage();
         } catch (err) {
@@ -325,6 +327,18 @@ export default function Admin() {
                                                 </div>
                                             </div>
                                             <div style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'flex-end' }}>
+                                                {dbSteps.includes('ohlcv') && (
+                                                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                                                        <span style={{ color: 'var(--text-muted)' }}>OHLCV Days:</span>
+                                                        <input
+                                                            type="number"
+                                                            min={1} max={365}
+                                                            value={dbOhlcvDays}
+                                                            onChange={(e) => setDbOhlcvDays(Math.max(1, parseInt(e.target.value) || 10))}
+                                                            style={{ width: 60, padding: '2px 6px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontSize: 13 }}
+                                                        />
+                                                    </label>
+                                                )}
                                                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
                                                     <input
                                                         type="checkbox"

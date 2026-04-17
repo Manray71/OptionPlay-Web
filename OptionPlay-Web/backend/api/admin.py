@@ -34,7 +34,7 @@ CONFIG_FILES = {
 OPTIONPLAY_ROOT = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "../../../OptionPlay")
 )
-DBUPDATE_SCRIPT = os.path.join(OPTIONPLAY_ROOT, "scripts", "DBupdate.py")
+DBUPDATE_SCRIPT = os.path.join(OPTIONPLAY_ROOT, "scripts", "daily_data_fetcher.py")
 FUNDAMENTALS_SCRIPT = os.path.join(
     OPTIONPLAY_ROOT, "scripts", "populate_fundamentals.py"
 )
@@ -45,23 +45,39 @@ DB_PATH = os.path.expanduser("~/.optionplay/trades.db")
 @limiter.limit("5/minute")
 async def run_db_update(request: Request, payload: dict = Body(default={})):
     """
-    Run DBupdate.py with optional step selection.
+    Run daily_data_fetcher.py with optional step selection.
     Payload:
-      steps: list of steps ["vix", "options", "ohlcv"] (default: all)
+      steps: list of steps ["vix", "earnings", "ohlcv", "options"] (default: ["vix", "earnings"])
       dry_run: bool (default: false)
+      ohlcv_days: int (default: 10) — days of history to fetch for OHLCV
     """
-    steps = payload.get("steps", ["vix", "options", "ohlcv"])
+    steps = payload.get("steps", ["vix", "earnings"])
     dry_run = payload.get("dry_run", False)
+    ohlcv_days = int(payload.get("ohlcv_days", 10))
 
     if not os.path.exists(DBUPDATE_SCRIPT):
-        raise HTTPException(status_code=404, detail="DBupdate.py not found")
+        raise HTTPException(
+            status_code=404, detail="daily_data_fetcher.py not found"
+        )
 
-    cmd = [sys.executable, DBUPDATE_SCRIPT]
+    # daily_data_fetcher.py always fetches VIX by default.
+    # Build cmd flags based on selected steps.
+    cmd = [sys.executable, DBUPDATE_SCRIPT, "--verbose"]
 
-    valid_steps = [s for s in steps if s in ("vix", "options", "ohlcv")]
-    if valid_steps:
-        cmd.append("--steps")
-        cmd.extend(valid_steps)
+    steps_set = set(steps)
+
+    # VIX is fetched by default — add --vix-only to SKIP earnings when not selected
+    if "earnings" not in steps_set and "ohlcv" not in steps_set and "options" not in steps_set:
+        cmd.append("--vix-only")
+
+    if "earnings" in steps_set:
+        cmd.append("--update-earnings")
+
+    if "ohlcv" in steps_set:
+        cmd.extend(["--update-prices", str(ohlcv_days)])
+
+    if "options" in steps_set:
+        cmd.append("--snapshot-options")
 
     if dry_run:
         cmd.append("--dry-run")
@@ -71,7 +87,7 @@ async def run_db_update(request: Request, payload: dict = Body(default={})):
             cmd,
             capture_output=True,
             text=True,
-            timeout=600,  # 10 minute timeout
+            timeout=1800,  # 30 min timeout (options snapshot can be long)
             cwd=OPTIONPLAY_ROOT,
         )
         return {
@@ -83,7 +99,7 @@ async def run_db_update(request: Request, payload: dict = Body(default={})):
     except subprocess.TimeoutExpired:
         return {
             "status": "timeout",
-            "message": "DB update timed out after 10 minutes",
+            "message": "DB update timed out after 30 minutes",
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -93,7 +109,6 @@ async def run_db_update(request: Request, payload: dict = Body(default={})):
 async def get_db_status():
     """Get the current DB status (last update dates, row counts)."""
     try:
-        sys.path.insert(0, OPTIONPLAY_ROOT)
         result = subprocess.run(
             [sys.executable, DBUPDATE_SCRIPT, "--status"],
             capture_output=True,
@@ -230,7 +245,8 @@ async def run_fundamentals_update(request: Request, payload: dict = Body(default
         )
 
     mode = payload.get("mode", "full")
-    cmd = [sys.executable, FUNDAMENTALS_SCRIPT]
+    delay = float(payload.get("delay", 1.0))
+    cmd = [sys.executable, FUNDAMENTALS_SCRIPT, "--delay", str(delay)]
 
     valid_modes = {
         "yfinance-only": "--yfinance-only",
