@@ -153,10 +153,8 @@ function mapApiAnalysis(data, sym) {
         rsi: pick('rsi', 'value') ?? pick('momentum_health', 'rsi'),
         rsiDivergence: pick('rsi_divergence', 'type'),
         rsiDivergenceStrength: pick('rsi_divergence', 'strength'),
-        // Trend status: trend_continuation uses sma_alignment, pullback uses trend/trend_strength
         trendStatus: bestBd.trend?.status ?? pick('trend', 'status'),
         trendScore: bestBd.trend?.score ?? pick('sma_alignment', 'score'),
-        // SMA data: trend_continuation has raw values, pullback has vs_sma20/vs_sma200
         sma20: pick('sma_alignment', 'sma_20'),
         sma50: pick('sma_alignment', 'sma_50'),
         sma200: pick('sma_alignment', 'sma_200'),
@@ -167,7 +165,6 @@ function mapApiAnalysis(data, sym) {
         smaReason: pick('moving_averages', 'reason') ?? pick('trend_strength', 'reason'),
         trendAlignment: pick('trend_strength', 'alignment'),
         sma20Slope: pick('trend_strength', 'sma20_slope'),
-        // Momentum health (trend_continuation)
         momentumScore: pick('momentum_health', 'score'),
         adx: pick('momentum_health', 'adx'),
         macdBullish: pick('momentum_health', 'macd_bullish') ?? (pick('macd', 'signal') === 'bullish'),
@@ -819,7 +816,7 @@ export default function Analysis({ initialSymbol, onSymbolConsumed, analysisCach
                                                 </div>
                                             </div>
 
-                                            {/* SMA Alignment — raw values from trend_continuation, or position from pullback */}
+                                            {/* SMA Alignment */}
                                             {(result.momentum.sma20 != null || result.momentum.vsSma20 != null) && (
                                                 <div className="momentum-indicator">
                                                     <div className="momentum-label">Moving Averages</div>
