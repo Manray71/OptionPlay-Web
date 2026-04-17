@@ -1246,28 +1246,6 @@ async def get_sectors():
                 "trail": data.get("trail", []),
             })
         return {"sectors": result, "version": "v2"}
-    except Exception:
-        pass
-
-    # Fallback to v1 SectorCycleService
-    try:
-        from src.services.sector_cycle_service import SectorCycleService
-
-        service = SectorCycleService()
-        statuses = await service.get_all_sector_statuses()
-
-        result = []
-        for s in sorted(statuses, key=lambda x: x.momentum_factor, reverse=True):
-            result.append({
-                "sector": s.sector,
-                "etf": s.etf_symbol,
-                "momentum_factor": round(s.momentum_factor, 3),
-                "regime": s.regime.value if hasattr(s.regime, "value") else str(s.regime),
-                "rs_30d": round(s.relative_strength_30d, 2),
-                "rs_60d": round(s.relative_strength_60d, 2),
-                "breadth": round(s.breadth_proxy, 3),
-            })
-        return {"sectors": result, "version": "v1"}
     except Exception as e:
         return _error(str(e))
 
