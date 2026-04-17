@@ -70,7 +70,7 @@ class ShadowLogRequest(BaseModel):
 
 # ── Helpers (extracted to services/ibkr_helpers.py) ──
 
-from ..services.ibkr_helpers import (
+from ..services.ibkr_helpers import (  # noqa: E402
     _vix_regime,
     _is_us_market_open,
     _us_market_session,
@@ -79,9 +79,6 @@ from ..services.ibkr_helpers import (
     _fetch_ibkr_news,
     _fetch_ibkr_portfolio,
     _fetch_ibkr_quotes,
-    IBKR_HOST,
-    IBKR_PORT,
-    DB_PATH,
 )
 
 
@@ -1477,7 +1474,7 @@ async def log_shadow_trade(req: ShadowLogRequest):
     rejection_reason = None
     chain_details = {}
     try:
-        server = server if "server" in dir() else await get_server()
+        server = await get_server()  # noqa: F821
         ctx = server.handlers.analysis._ctx if server else None
         if ctx and getattr(ctx, 'ibkr_connected', False):
             provider = ctx.ibkr_provider

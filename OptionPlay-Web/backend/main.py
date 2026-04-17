@@ -12,7 +12,6 @@ from slowapi.errors import RateLimitExceeded
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 from .api import routes, admin, json_routes  # noqa: E402
-from .api.sse_routes import sse_route  # noqa: E402
 from .rate_limit import limiter  # noqa: E402
 from .services.polling_loop import start_polling  # noqa: E402
 
@@ -57,9 +56,9 @@ app.include_router(routes.router, prefix="/api", tags=["General"])
 app.include_router(admin.router, prefix="/api/admin", tags=["Admin"])
 app.include_router(json_routes.router, prefix="/api/json", tags=["JSON API"])
 
-# SSE route — mounted via Starlette Mount to bypass anyio (Python 3.14 compat)
-from starlette.routing import Mount, Route
-from .api.sse_routes import _stream_handler
+# SSE route — mounted via Starlette Route to bypass anyio (Python 3.14 compat)
+from starlette.routing import Route  # noqa: E402
+from .api.sse_routes import _stream_handler  # noqa: E402
 app.router.routes.insert(0, Route("/api/json/stream", _stream_handler))
 
 

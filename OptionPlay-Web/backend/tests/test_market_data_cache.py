@@ -1,8 +1,7 @@
 """Tests for the in-memory market data cache."""
 
-import sys
 import os
-import asyncio
+import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
@@ -13,8 +12,6 @@ from backend.services.market_data_cache import (
     get_version,
     update_cache,
     set_poll_status,
-    _cache,
-    _lock,
 )
 
 

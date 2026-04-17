@@ -8,7 +8,6 @@ Requests delayed data if live market data subscription is unavailable.
 import argparse
 import asyncio
 import json
-import sys
 
 
 def main():
