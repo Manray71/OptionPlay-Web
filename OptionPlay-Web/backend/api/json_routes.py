@@ -640,8 +640,7 @@ async def analyze_symbol(symbol: str):
         # Get IV data
         iv_data = None
         try:
-            ctx = scan_handler._ctx
-            provider = ctx.ibkr_provider
+            provider = scan_handler.ibkr_provider
             if provider:
                 iv = await provider.get_iv_data(symbol)
                 if iv:
@@ -734,7 +733,7 @@ async def analyze_symbol(symbol: str):
                 if vix is None:
                     vix, _ = _db_last_vix()
                 analysis_handler = server.handlers.analysis
-                regime = analysis_handler._ctx.vix_selector.get_regime(vix) if vix else None
+                regime = analysis_handler.vix_selector.get_regime(vix) if vix and analysis_handler.vix_selector else None
 
                 # Support levels from lows
                 support_levels = find_support_levels(
@@ -853,14 +852,18 @@ async def analyze_symbol(symbol: str):
         # Fallback to yfinance news if IBKR unavailable
         if not news_data:
             try:
-                loop = asyncio.get_event_loop()
-                from src.data_providers.yahoo_news import get_stock_news
-
-                news_raw = await loop.run_in_executor(
-                    None, get_stock_news, symbol, 5
-                )
-                if news_raw:
-                    news_data = news_raw
+                import yfinance as yf
+                ticker = yf.Ticker(symbol)
+                raw_news = ticker.news or []
+                news_data = [
+                    {
+                        "title": (item.get("content") or {}).get("title", ""),
+                        "link": ((item.get("content") or {}).get("canonicalUrl") or {}).get("url", ""),
+                        "publisher": ((item.get("content") or {}).get("provider") or {}).get("displayName", ""),
+                        "published": (item.get("content") or {}).get("pubDate", ""),
+                    }
+                    for item in raw_news[:5]
+                ]
             except Exception:
                 pass
 
@@ -922,11 +925,18 @@ async def get_news(request: Request, symbol: str, count: int = 5):
 
     # Fallback to yfinance
     try:
-        loop = asyncio.get_event_loop()
-
-        from src.data_providers.yahoo_news import get_stock_news
-        news = await loop.run_in_executor(None, get_stock_news, symbol, count)
-
+        import yfinance as yf
+        ticker = yf.Ticker(symbol)
+        raw_news = ticker.news or []
+        news = [
+            {
+                "title": (item.get("content") or {}).get("title", ""),
+                "link": ((item.get("content") or {}).get("canonicalUrl") or {}).get("url", ""),
+                "publisher": ((item.get("content") or {}).get("provider") or {}).get("displayName", ""),
+                "published": (item.get("content") or {}).get("pubDate", ""),
+            }
+            for item in raw_news[:count]
+        ]
         return {
             "symbol": symbol,
             "source": "yfinance",
@@ -1453,9 +1463,9 @@ async def log_shadow_trade(req: ShadowLogRequest):
     chain_details = {}
     try:
         server = await get_server()  # noqa: F821
-        ctx = server.handlers.analysis._ctx if server else None
-        if ctx and getattr(ctx, 'ibkr_connected', False):
-            provider = ctx.ibkr_provider
+        handler = server.handlers.analysis if server else None
+        if handler and handler.ibkr_connected:
+            provider = handler.ibkr_provider
             if provider and req.expiration:
                 tradeable, rejection_reason, chain_details = await check_tradability(
                     provider, symbol, req.expiration,
@@ -1608,10 +1618,18 @@ async def get_market_news(count: int = 5):
             pass
 
         # Fallback: yfinance
-        loop = asyncio.get_event_loop()
-        from src.data_providers.yahoo_news import get_stock_news
-
-        news = await loop.run_in_executor(None, get_stock_news, "SPY", count)
+        import yfinance as yf
+        ticker = yf.Ticker("SPY")
+        raw_news = ticker.news or []
+        news = [
+            {
+                "title": (item.get("content") or {}).get("title", ""),
+                "link": ((item.get("content") or {}).get("canonicalUrl") or {}).get("url", ""),
+                "publisher": ((item.get("content") or {}).get("provider") or {}).get("displayName", ""),
+                "published": (item.get("content") or {}).get("pubDate", ""),
+            }
+            for item in raw_news[:count]
+        ]
         return {"news": enrich_news_sentiment(news) or [], "source": "yfinance"}
     except Exception as e:
         return _error(str(e))
