@@ -4,6 +4,7 @@ python-dotenv
 pyyaml
 slowapi
 pytest
+pytest-asyncio
 httpx
 ruff
 nest_asyncio
