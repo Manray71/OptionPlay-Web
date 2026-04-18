@@ -339,66 +339,12 @@ async def run_scan(req: ScanRequest):
     try:
         scan_handler = server.handlers.scan
 
-        # Map strategy string to ScanMode
-        from src.scanner.multi_strategy_scanner import ScanMode, ScanConfig, MultiStrategyScanner
-        mode_map = {
-            "multi": ScanMode.BEST_SIGNAL,
-            "pullback": ScanMode.PULLBACK_ONLY,
-            "bounce": ScanMode.BOUNCE_ONLY,
-        }
-        mode = mode_map.get(req.strategy, ScanMode.BEST_SIGNAL)
-
-        # Build scanner with v2 feature flags
-        scan_config = ScanConfig(
+        result = await scan_handler.execute_scan_raw(
+            strategy=req.strategy,
+            list_type=req.list_type,
             min_score=req.min_score,
-            enable_regime_v2=True,
-            enable_sector_rs=True,
+            max_results=req.max_results,
         )
-        scanner = MultiStrategyScanner(config=scan_config)
-
-        # Prefetch sector RS data
-        try:
-            await scanner.prefetch_sector_rs()
-        except Exception:
-            pass  # Non-critical, scan works without it
-
-        # Get symbols from watchlist
-        from src.config.watchlist_loader import get_watchlist_loader
-        watchlist_loader = get_watchlist_loader()
-        symbols = watchlist_loader.get_symbols_by_list_type(req.list_type)
-
-        # Build data fetcher
-        prefetch_cache = {}
-
-        async def prefetch_batch(batch_syms):
-            tasks = [
-                scan_handler._fetch_historical_cached(sym, days=260)
-                for sym in batch_syms
-            ]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            for sym, result in zip(batch_syms, results):
-                if result is not None and not isinstance(result, Exception):
-                    prefetch_cache[sym] = result
-
-        batch_size = 20
-        for i in range(0, len(symbols), batch_size):
-            await prefetch_batch(symbols[i:i + batch_size])
-
-        async def data_fetcher(symbol):
-            if symbol in prefetch_cache:
-                return prefetch_cache[symbol]
-            return await scan_handler._fetch_historical_cached(symbol, days=260)
-
-        result = await scanner.scan_async(
-            symbols=symbols,
-            data_fetcher=data_fetcher,
-            mode=mode,
-        )
-
-        # Trim to max_results
-        result.signals = sorted(
-            result.signals, key=lambda s: s.score, reverse=True
-        )[:req.max_results]
 
         scan_dict = result.to_dict()
 
