@@ -56,10 +56,12 @@ app.include_router(routes.router, prefix="/api", tags=["General"])
 app.include_router(admin.router, prefix="/api/admin", tags=["Admin"])
 app.include_router(json_routes.router, prefix="/api/json", tags=["JSON API"])
 
-# SSE route — mounted via Starlette Route to bypass anyio (Python 3.14 compat)
-from starlette.routing import Route  # noqa: E402
-from .api.sse_routes import _stream_handler  # noqa: E402
-app.router.routes.insert(0, Route("/api/json/stream", _stream_handler))
+# SSE route — mounted as a pure ASGI app to bypass anyio (Python 3.14 compat)
+# Mount avoids Starlette's request_response() wrapper which crashes when the
+# handler returns None instead of a Response object.
+from starlette.routing import Mount  # noqa: E402
+from .api.sse_routes import stream_asgi_app  # noqa: E402
+app.router.routes.insert(0, Mount("/api/json/stream", app=stream_asgi_app))
 
 
 @app.get("/health")

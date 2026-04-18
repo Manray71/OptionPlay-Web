@@ -1,15 +1,13 @@
 """SSE (Server-Sent Events) endpoint for real-time market data streaming.
 
-Uses a plain Starlette Route with a raw ASGI handler to avoid
-Python 3.14 + anyio compatibility issues.
+Uses a pure ASGI callable (scope, receive, send) mounted via Starlette Mount
+to avoid Python 3.14 + anyio compatibility issues and the None-response crash
+that occurs when a Route endpoint doesn't return a Response object.
 """
 
 import asyncio
 import json
 import logging
-
-from starlette.requests import Request
-from starlette.routing import Route
 
 from ..services.market_data_cache import get_snapshot, get_version
 
@@ -17,16 +15,14 @@ logger = logging.getLogger("optionplay.sse")
 
 
 def _format_sse(event: str, data: str) -> bytes:
-    """Format a single SSE message as bytes."""
     return f"event: {event}\ndata: {data}\n\n".encode("utf-8")
 
 
-async def _stream_handler(request: Request):
-    """Raw ASGI SSE handler — no anyio dependency."""
-    send = request._send
-    receive = request._receive
+async def stream_asgi_app(scope, receive, send):
+    """Pure ASGI SSE handler — no anyio dependency, no Starlette Response wrapper."""
+    if scope["type"] != "http":
+        return
 
-    # Send headers
     await send({
         "type": "http.response.start",
         "status": 200,
@@ -39,7 +35,6 @@ async def _stream_handler(request: Request):
         ],
     })
 
-    # Send initial snapshot
     snapshot = get_snapshot()
     await send({
         "type": "http.response.body",
@@ -49,13 +44,10 @@ async def _stream_handler(request: Request):
     last_version = snapshot["version"]
     heartbeat_counter = 0
 
-    # Stream loop
     while True:
-        # Check for client disconnect (non-blocking)
         disconnected = False
         try:
-            coro = receive()
-            msg = await asyncio.wait_for(coro, timeout=0.01)
+            msg = await asyncio.wait_for(receive(), timeout=0.01)
             if msg.get("type") == "http.disconnect":
                 logger.debug("SSE client disconnected")
                 disconnected = True
@@ -66,7 +58,6 @@ async def _stream_handler(request: Request):
         if disconnected:
             break
 
-        # Check for cache updates
         current_version = get_version()
         if current_version > last_version:
             snapshot = get_snapshot()
@@ -81,7 +72,6 @@ async def _stream_handler(request: Request):
             last_version = current_version
             heartbeat_counter = 0
 
-        # Heartbeat every ~30s
         heartbeat_counter += 1
         if heartbeat_counter >= 15:
             try:
@@ -96,17 +86,7 @@ async def _stream_handler(request: Request):
 
         await asyncio.sleep(2)
 
-    # Close
     try:
-        await send({
-            "type": "http.response.body",
-            "body": b"",
-            "more_body": False,
-        })
+        await send({"type": "http.response.body", "body": b"", "more_body": False})
     except Exception:
         pass
-
-
-# Expose as a Starlette Route (not a FastAPI router)
-# Must be mounted via app.routes.append() or app.mount()
-sse_route = Route("/stream", _stream_handler)
